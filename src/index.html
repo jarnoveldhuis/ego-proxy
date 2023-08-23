@@ -1,36 +1,32 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link href="../dist/output.css" rel="stylesheet">
-    <title>ChatGPT Bot</title>
+  <link href="output.css" rel="stylesheet">
+  <title>ChatGPT Bot</title>
 </head>
-<body>
-    <h1 class="text-3xl font-bold underline">Instibot</h1>
-    <div>
-      <h3>Bot Response:</h3>
-      
-      <div class="chat chat-start">
-        <div class="chat-image avatar">
-          <div class="w-10 rounded-full">
-            <img src="https://i0.wp.com/fullofwords.com/wp-content/uploads/2020/08/marvin-1.jpg?fit=1024%2C576&ssl=1" />
-          </div>
-        </div>
-        <div class="chat-bubble"><p id="botResponse"></p></div>
-      </div>
+
+<div class="flex items-center justify-center min-h-screen bg-gray-50 py-6 sm:py-12">
+  Instibot
+
+  <div class="chat" id="botResponse">
+      Hi, how can I help?
   </div>
-    <div class="form-control">
-      <div class="input-group">
-        <textarea class="textarea textarea-accent" placeholder="Message"></textarea>
-        <button class="btn btn-square" onclick="askBot()">
-         Send
-        </button>
-      </div>
-    </div>
+
+  <div class="mt-4">
+      <textarea class="justify-center textarea-accent" id="userInput" placeholder="Message"></textarea>
+  </div>
+
+  <button class="btn btn-square mt-4" onclick="askBot()">
+      Send
+  </button>
+</div>
 
 
+<script src="script.js"></script>
 
-    <script src="script.js"></script>
-</body>
+
 </html>
