@@ -7,7 +7,7 @@ const app = express();
 const port = process.env.PORT || 3001;
 
 app.use(bodyParser.json());
-app.use(express.static('public'));  // Serve static files from 'public' directory
+app.use(express.static('src'));  // Serve static files from 'public' directory
 
 const API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const HEADERS = {
