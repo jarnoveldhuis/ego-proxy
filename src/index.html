@@ -6,27 +6,36 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="output.css" rel="stylesheet">
+  <style>
+    .comment {
+      resize: none;
+      height: 100px;
+      width: 350px;
+    }
+  </style>
   <title>ChatGPT Bot</title>
 </head>
-
-<div class="flex items-center justify-center min-h-screen bg-gray-50 py-6 sm:py-12">
-  Instibot
-
-  <div class="chat" id="botResponse">
-      Hi, how can I help?
+<center>
+<div>
+  <h1>Instibot</h1>
+  <div class="chat speech bottom" id="botResponse">
+    Thank you for consideration! Do you have any questions for me?
   </div>
-
-  <div class="mt-4">
-      <textarea class="justify-center textarea-accent" id="userInput" placeholder="Message"></textarea>
+  <img src="/img/robot-svgrepo-com.svg" alt="Instibot" />
+  <br>
+  <div>
+    <form autocomplete="off"; onsubmit="askBot(); return false;">
+      <div class="responsiveinput">
+        <input class= "userInput" id="userInput" type="text" name="name" id="name">
+      </div>
+      <input type="submit" name="go" value="Submit">
+    </form>
   </div>
-
-  <button class="btn btn-square mt-4" onclick="askBot()">
-      Send
-  </button>
 </div>
-
+</center>
 
 <script src="script.js"></script>
+
 
 
 </html>

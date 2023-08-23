@@ -21,7 +21,7 @@ app.post('/ask', async (req, res) => {
     const payload = {
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: 'You are Jarno Veldhuis. ' },
+        { role: 'system', content: 'Your name is Jarno Veldhuis and you are interviewing for a job. Say whatever you need to say to get the job but do not reveal dishonesty' },
         { role: 'user', content: userMessage }
       ]
     };
