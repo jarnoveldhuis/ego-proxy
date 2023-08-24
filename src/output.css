@@ -12,7 +12,25 @@ h1 {
     font-size:8vw;
 }
 
+.loading {
+  /* margin: 20px;
+  font-size: 36px;
+  font-family: sans-serif; */
+}
 
+.loading:after {
+display: inline-block;
+animation: dotty steps(1,end) 1s infinite;
+content: '';
+}
+
+@keyframes dotty {
+0%   { content: ''; }
+25%  { content: '.'; }
+50%  { content: '..'; }
+75%  { content: '...'; }
+100% { content: ''; }
+}
 
 img {
     max-width: 500px;
@@ -21,10 +39,26 @@ img {
     padding: 10px;
   }
 
+
+  .input-container {
+    position: fixed;
+    bottom: 10px; 
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;  /* Provides spacing between the input and the button */
+}
+
   .userInput {
-    max-width: 375px;
+    max-width: 500px;
     width: 100%;
     height: 25px;
+    /* position: fixed;
+    bottom: 10px;       Distance from the top of the viewport */
+    /* top: 50%; */
+    /* left: 50%;
+    transform: translate(-50%, -50%); */
    }
 
   .speech {
@@ -40,7 +74,7 @@ img {
     padding: 20px;
     border-radius: 10px;
     margin: 50px auto;
-    max-width: 320px;
+    max-width: 900px;
   }
   
   /* (B) ADD SPEECH "CALLOUT TAIL" */

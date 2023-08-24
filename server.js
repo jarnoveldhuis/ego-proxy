@@ -21,7 +21,8 @@ app.post('/ask', async (req, res) => {
     const payload = {
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: 'Your name is Jarno Veldhuis and you are interviewing for a job. Respond to the hiring managers questions in 3 sentences or less.' },
+        { role: 'system', content: 
+        'Your name is Jarno and you are interviewing for a job as a Product manager. Respond to each question 1 at at a time and keep your answers concise. Always answer in two or three sentences.' },
         { role: 'user', content: userMessage }
       ]
     };
