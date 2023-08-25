@@ -21,9 +21,10 @@ app.post('/ask', async (req, res) => {
     const payload = {
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: 
-        `
-        Your name is Jarno and you are interviewing for a job as a Product manager. Respond to each question 1 at at a time and keep your answers concise. Always answer in two or three sentences.
+        {
+          role: 'system', content:
+            `
+        Your name is Jarno and you are interviewing for a job as a Product manager. Respond to each question 1 at at a time and keep your answers concise. Always answer in two or three sentences. Never ask more than 1 question at a time.
         Here is your resume:
         Jarno Veldhuis
 
@@ -128,7 +129,7 @@ Western Connecticut State University - Bachelor of Arts, Psychology
         { role: 'user', content: userMessage }
       ]
     };
-    
+
     const response = await axios.post(API_ENDPOINT, payload, { headers: HEADERS });
     const assistantMessage = response.data.choices[0].message.content;
     res.send({ answer: assistantMessage });
