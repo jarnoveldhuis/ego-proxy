@@ -7,7 +7,7 @@ function askBot() {
   userInputElem.value = '';
 
   // Update to thinking image
-  botImage.src = "/img/thinking_man.svg";
+  botImage.src = "/img/think1.png";
 
   const botResponse = document.getElementById('botResponse');
   
@@ -29,7 +29,7 @@ function askBot() {
       botResponse.textContent = data.answer;
       botResponse.classList.remove('loading');
       // Change the image when the API call finishes successfully
-      botImage.src = "/img/robot-svgrepo-com.svg"; // Change to the path of your success image or back to the original
+      botImage.src = "/img/neutral.png"; // Change to the path of your success image or back to the original
     })
     .catch(error => {
       botResponse.textContent = 'Error communicating with the bot.';
@@ -39,5 +39,5 @@ function askBot() {
 }
 // Change the image when the user clicks on the text field
 document.getElementById('userInput').addEventListener('focus', function () {
-  document.getElementById('botImage').src = "/img/robot-svgrepo-com.svg"; // Change to the path of your clicked image
+document.getElementById('botImage').src = "/img/listening.png"; // Change to the path of your clicked image
 });
