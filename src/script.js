@@ -1,7 +1,10 @@
 function askBot() {
   const userInputElem = document.getElementById('userInput');
+
   const botImage = document.getElementById('botImage'); // Get the image element
   const userInputValue = userInputElem.value;
+
+  
 
   // Clear the input field immediately after the function runs
   userInputElem.value = '';
@@ -36,7 +39,15 @@ function askBot() {
       botResponse.classList.remove('loading');
       console.error('Error:', error);
     });
+    // userInputValue.addEventListener("submit", (e) => {
+    //   if (userInputValue.querySelector(".content").value.trim() === "") {
+    //     e.preventDefault();
+    //     alert("Please enter some content before submitting.");
+    //   }
+    // });
 }
+
+
 // Change the image when the user clicks on the text field
 document.getElementById('userInput').addEventListener('focus', function () {
 document.getElementById('botImage').src = "/img/listening.svg"; // Change to the path of your clicked image
