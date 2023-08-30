@@ -42,7 +42,7 @@ img {
 
   .input-container {
     position: fixed;
-    bottom: 50px;
+    bottom: 25%;
     left: 50%;
     transform: translate(-50%, -50%);
     display: flex;
