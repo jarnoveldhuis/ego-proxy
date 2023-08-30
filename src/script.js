@@ -66,3 +66,9 @@ document.getElementById('userInput').addEventListener('keydown', function () {
 function doneTyping() {
   document.getElementById('botImage').src = "/img/neutral.svg"; // Switch back to the original image
 }
+
+const inputElement = document.getElementById('userInput');
+
+inputElement.addEventListener('focus', function() {
+  inputElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
