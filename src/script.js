@@ -39,6 +39,9 @@ function askBot() {
     });
 }
 
+window.addEventListener("load", function() {
+  askBot();
+});
 
 // Change the image when the user clicks on the text field
 document.getElementById('userInput').addEventListener('focus', function () {
