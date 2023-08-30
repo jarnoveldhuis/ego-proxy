@@ -68,7 +68,8 @@ function doneTyping() {
 }
 
 const inputElement = document.getElementById('userInput');
+const imageElement = document.getElementById('your-image-id');
 
 inputElement.addEventListener('focus', function() {
-  inputElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  imageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
