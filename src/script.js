@@ -1,6 +1,8 @@
+let thinkingTimer;
+const thinkDelay = 2000;
+
 function askBot() {
   const userInputElem = document.getElementById('userInput');
-
   const botImage = document.getElementById('botImage'); // Get the image element
   const userInputValue = userInputElem.value;
 
@@ -8,10 +10,12 @@ function askBot() {
   userInputElem.value = '';
 
   // Update to thinking image
-  botImage.src = "/img/think1.svg";
+  thinkingTimer = setTimeout(() => {
+    botImage.src = "/img/think.svg";
+  }, thinkDelay);
 
   const botResponse = document.getElementById('botResponse');
-  
+
   // Set an immediate response message
   botResponse.textContent = '';
 
@@ -27,23 +31,38 @@ function askBot() {
   })
     .then(response => response.json())
     .then(data => {
+      clearTimeout(thinkingTimer);
       botResponse.textContent = data.answer;
       botResponse.classList.remove('loading');
       // Change the image when the API call finishes successfully
-      botImage.src = "/img/listening.svg"; // Change to the path of your success image or back to the original
+      botImage.src = "/img/neutral.svg"; // Change to the path of your success image or back to the original
     })
     .catch(error => {
+      clearTimeout(thinkingTimer);
       botResponse.textContent = 'Error communicating with the bot.';
       botResponse.classList.remove('loading');
       console.error('Error:', error);
     });
 }
 
-window.addEventListener("load", function() {
-  askBot();
-});
+// window.addEventListener("load", function() {
+//   askBot();
+// });
 
 // Change the image when the user clicks on the text field
 document.getElementById('userInput').addEventListener('focus', function () {
-document.getElementById('botImage').src = "/img/listening.svg"; // Change to the path of your clicked image
+  document.getElementById('botImage').src = "/img/neutral.svg";
 });
+
+let typingTimer; // Timer identifier
+const doneTypingInterval = 1000;
+
+document.getElementById('userInput').addEventListener('keydown', function () {
+  clearTimeout(typingTimer);
+  document.getElementById('botImage').src = "/img/listening.svg";
+  typingTimer = setTimeout(doneTyping, doneTypingInterval);
+});
+
+function doneTyping() {
+  document.getElementById('botImage').src = "/img/neutral.svg"; // Switch back to the original image
+}
