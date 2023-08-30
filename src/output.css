@@ -39,10 +39,9 @@ img {
     padding: 10px;
   }
 
-
   .input-container {
     position: fixed;
-    bottom: 25%;
+    bottom: 10%;
     left: 50%;
     transform: translate(-50%, -50%);
     display: flex;
@@ -51,9 +50,9 @@ img {
     width: 300px;  /* for instance, set a specific width */
 }
 
-#userInput {
-    width: 100%;  /* this ensures the text field takes the full width of its container */
-}
+  .userInput {
+    width: 100%;
+   }
 
   .speech {
     /* (A1) FONT */
