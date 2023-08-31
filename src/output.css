@@ -39,7 +39,7 @@ img {
     padding: 0px;
   }
 
-  /* .input-container {
+  .input-container {
     position: fixed;
     bottom: 5px;
     left: 50%; 
@@ -47,8 +47,8 @@ img {
     display: flex;
     flex-direction: column;
     gap: 2px; 
-    width: 300px;  /* for instance, set a specific width */
-} */
+    width: 300px;  
+} 
 
   .userInput {
     width: 100%;
