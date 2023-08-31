@@ -27,7 +27,7 @@ app.post('/ask', async (req, res) => {
         },
         {
           "role": "assistant",
-          "content": "Hello everyone, my name is Jarno and I'm excited to be here for the interview.  I'm ready to jump right in and answer any questions you may have. Let's get started, shall we?"
+          "content": "Hello , my name is Jarno and I'm excited to be here for the interview. Let's get started, shall we?"
         },
         {
           "role": "user",
