@@ -97,3 +97,8 @@ document.addEventListener('DOMContentLoaded', (event) => {
       });
   }
 });
+const field = document.getElementById("userInput");
+
+field.addEventListener("focus", () => {
+  field.style.marginBottom = 0;
+});
