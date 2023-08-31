@@ -42,6 +42,7 @@ function askBot() {
       clearTimeout(thinkingTimer);
       botResponse.textContent = 'Error communicating with the bot.';
       botResponse.classList.remove('loading');
+      botImage.src = "/img/error.svg";
       console.error('Error:', error);
     });
 }
