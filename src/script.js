@@ -36,6 +36,7 @@ function askBot() {
       botResponse.classList.remove('loading');
       // Change the image when the API call finishes successfully
       botImage.src = "/img/neutral.svg"; // Change to the path of your success image or back to the original
+      checkOverlap()
     })
     .catch(error => {
       clearTimeout(thinkingTimer);
@@ -102,3 +103,21 @@ const field = document.getElementById("userInput");
 field.addEventListener("focus", () => {
   field.style.marginBottom = 0;
 });
+function checkOverlap() {
+  const svgElement = document.getElementById("botImage");
+  const textElement = document.getElementById("botResponse");
+
+  const svgRect = svgElement.getBoundingClientRect();
+  const textRect = textElement.getBoundingClientRect();
+
+  const overlap = !(svgRect.right < textRect.left || 
+                    svgRect.left > textRect.right || 
+                    svgRect.bottom < textRect.top || 
+                    svgRect.top > textRect.bottom);
+
+  svgElement.style.opacity = overlap ? 0.5 : 1;
+  
+}
+
+// Run checkOverlap function when the window resizes or other events that could trigger overlap
+window.addEventListener("resize", checkOverlap);
