@@ -1,7 +1,66 @@
 body {
-  background-color: #ff2d2d;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* justify-content: center; */
+  height: 100vh;
 }
 
+#showFormBtn {
+  position: fixed;
+  position: absolute; 
+  top: 0px;
+  right: 0px
+}
+
+/* The Modal */
+.modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 1; /* Sit on top */
+  padding-top: 100px; /* Location of the box */
+  left: 0;
+  top: 0;
+  width: 100%; /* Full width */
+  height: 100%; /* Full height */
+  overflow: auto; /* Enable scroll if needed */
+  background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+}
+
+.modal-content input[type="text"],
+.modal-content textarea {
+  width: 100%; /* This ensures it takes the full width */
+  box-sizing: border-box; /* This ensures padding and border are included in the element's total width and height */
+  margin-bottom: 10px; /* Add some margin for better spacing */
+}
+
+/* Modal Content */
+.modal-content {
+  position: relative;
+  background-color: #fefefe;
+  margin: auto;
+  padding: 20px;
+  border: 1px solid #888;
+  width: 100%;
+  max-width: 500px;
+  box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19);
+}
+
+/* Close Button */
+.close-btn {
+  color: #aaa;
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.close-btn:hover,
+.close-btn:focus {
+  color: black;
+  text-decoration: none;
+  cursor: pointer;
+}
 
 
 .bottom-container {
@@ -11,12 +70,14 @@ body {
 }
 
 .text-with-border {
-  max-width: 200px;
-  width: 100%;
-  height: 50%;
+  max-width: none; 
+  width: auto; 
+  height: auto; 
+  padding: 10px;
   border: 1px solid black;
   border-radius: 25px;
   padding: 20px;
+  box-sizing: border-box;
   /* overflow-y: auto; */
   /* Border width, style, and color */
   /* Add some padding around the text (optional) */
@@ -60,6 +121,23 @@ h1 {
   }
 }
 
+.input-wrapper {
+  display: flex;           /* Use Flexbox for layout */
+  align-items: center;     /* Center items vertically */
+}
+
+.input-wrapper .userInput {
+  margin-right: 10px;      /* Add some space between the input and the button */
+}
+
+.responsiveinput {
+  display: flex;
+  align-items: center;
+}
+
+.responsiveinput > * {
+  margin-right: 5px;  /* Some spacing between elements */
+}
 
 
 img {
@@ -76,12 +154,44 @@ img {
   padding: 10px;
 }
 
-.bot-container {
+/* .bot-container {
   width: 200px;  
   margin: auto;
   display: flex;
   flex-direction: column;
   gap: 2px;
+} */
+
+
+.bot-container {
+  width: 200px;
+}
+
+/* .input-container {
+  position: fixed;
+  bottom: 10%;
+  left: 50%; 
+  transform: translateX(-50%); 
+  width: 300px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+} */
+
+input[type=textarea] {
+  height: 30%;
+  padding: 12px 20px;
+  margin: 8px 0;
+  box-sizing: border-box;
+}
+
+textarea { resize: none; }
+
+.chat-container {
+  position: fixed;
+  top: 20px; /* Adjust this value as per your design needs */
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 /* .speech {
@@ -99,30 +209,39 @@ img {
     transform: translateX(-50%);
   }
   .input-container {
+    margin: 0 auto;  /* This centers the container horizontally */
     position: fixed;
-    bottom: 5px;
-    left: 50%;
-    transform: translate(-50%, -50%); 
+    bottom: 10%;
+    width: 300px;   /* Ensure you have a set width for this to work */
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    width: 300px;
-  }
+    justify-content: space-between;
+    align-items: center;
 }
 
-.input-container {
-  /* position: fixed;
-  bottom: 5px;
-  left: 50%;
-  transform: translate(-50%, -50%); 
-  display: flex;
-  flex-direction: column;
-  gap: 2px; */
-  width: 300px;
+  .response-container {
+    position: fixed;
+    top: 10%;
+  }
+  /* body {
+    display: block;
+  } */
 }
+
+/* .input-container {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  margin-right: auto;
+  width: 300px; 
+} */
+
+/* Provide some space between the input field and the button */
+/* input[type="submit"] {
+  margin-left: 10px;
+} */
 
 .userInput {
-  width: 100%;
+  width: calc(100%-20px); /* This is an example value; adjust as needed */
 }
 
 .speech {
@@ -138,7 +257,9 @@ img {
   padding: 20px;
   border-radius: 10px;
   margin: 50px auto;
+  min-width:200px;
   max-width: 500px;
+  text-align: center;
 }
 
 /* (B) ADD SPEECH "CALLOUT TAIL" */

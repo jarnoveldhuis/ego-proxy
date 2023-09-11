@@ -15,45 +15,77 @@
   <!-- Primary Meta Tags -->
   <title>Interbot</title>
   <meta name="title" content="Instibot" />
-  <meta name="description" content="Hello, my name is Jarno and I'm excited to be here for the interview. Let's get started, shall we?" />
+  <meta name="description"
+    content="Hello, my name is Jarno and I'm excited to be here for the interview. Let's get started, shall we?" />
 
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Instibot" />
-  <meta property="og:description"
-    content="Hi, I'm Jarno, I'm here for the interview. Let's get started, shall we?" />
+  <meta property="og:description" content="Hi, I'm Jarno, I'm here for the interview. Let's get started, shall we?" />
   <meta property="og:image" content="/img/hellopreview.png" />
   <meta property="twitter:image" content="/img/hellopreview.png" />
   <link rel="icon" href="/img/neutral.svg" sizes="any" />
-  
- 
 
-  <center>
+  <body>
+    <button id="showFormBtn" onclick="toggleSettingsModal()">⚙️Personalize</button>
 
-      <div class="chat speech bottom text-with-border">
-        <div class="" id="botResponse">
-          Hello everyone, my name is Jarno and I'm excited to be here for the interview. Let's get started, shall we?
-        </div>
+  <!-- <center> -->
+    <!-- <div class="chat-container"></div> -->
+    <div class="chat speech bottom text-with-border" id="response-container">
+      <div class="" id="botResponse">
+        Hi, I'm here for the interview. Let's get started, shall we?
       </div>
-      <div class="bot-container">
-        <img id="botImage" src="/img/hello.svg" alt="Instibot" />
-      </div>
+    </div>
+    <div class="bot-container">
+      <img id="botImage" src="/img/hello.svg" alt="Instibot" />
+    </div>
 
     <div class="input-container">
-      <form autocomplete="off" ; onsubmit="askBot(); return false;">
-        <div class="responsiveinput">
-          <input class="userInput" id="userInput" type="text" name="name" placeholder="Ask me anything..." required>
-
-          <input type="submit" name="go" value="Submit"> 
-
-        </div>
-      </form>
-
+      <div class="responsiveinput">
+        <form autocomplete="off" onsubmit="askBot(); return false;">
+          <input class="userInput" id="userInput" type="text" name="name" placeholder="Ask me anything..." required style="margin-bottom: 0px">
+          <input type="submit" name="go" value="Submit">    
+        </form>
+      </div>
     </div>
 
 
-</center>
+    <div id="settingsModal" class="modal">
+      <div class="modal-content">
+          <span class="close-btn" onclick="closeSettingsModal()">&times;</span>
+          <form autocomplete="off" onsubmit="closeSettingsModal()">
+              <label>Name:</label>
+              <br>
+              <input type="text" name="name" placeholder="Enter your name..." required>
+              <br>
+              <label>Role:</label>
+              <br>
+              <input type="text" name="role" placeholder="Enter the role..." required>
+              <br>
+              <label>Resume:</label>
+              <br>
+              <textarea id = "textarea" columns="100" rows="20" type="textarea" name="resume" placeholder="Paste your resume..." required></textarea>
+              <br>
+              <input type="submit" name="go" value="Submit">
+          </form>
+      </div>
+    </div>
 
+    <!-- <div id="settingsForm" style="display: none;">
+      <form autocomplete="off">
+        <label>Name:</label>
+        <input type="text" name="name" placeholder="Enter your name...">
+        <br>
+        <label>Role:</label>
+        <input type="text" name="role" placeholder="Enter the role...">
+        <br>
+        <input type="submit" name="go" value="Submit">
+      </form>
+    </div> -->
+
+
+  <!-- </center> -->
+</body>
 
   <script src="script.js"></script>
 
