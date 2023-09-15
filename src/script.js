@@ -302,7 +302,7 @@ document.addEventListener('DOMContentLoaded', (event) => {
 document.addEventListener('DOMContentLoaded', (event) => {
   // Set default bot's response
   const botResponse = document.getElementById('botResponse');
-  botResponse.textContent = `Hello, my name is ${userName} and I'm excited to be here for the ${userRole} interview. Let's get started, shall we?`;
+  botResponse.textContent = `Hello, my name is ${userName}. I'm here for the ${userRole} interview. Let's get started, shall we?`;
 
   // Call the askBot function if you want to communicate with your server immediately
   // askBot();  

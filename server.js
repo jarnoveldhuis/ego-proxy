@@ -135,7 +135,7 @@ app.post('/ask', async (req, res) => {
         },
         {
           "role": "assistant",
-          "content": "Hi, I'm ${name}, I'm here for the interview. Let's get started, shall we?"
+          "content": "Hi, I'm ${name}. Let's get started, shall we?"
         },
         {
           "role": "user",
