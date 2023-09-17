@@ -119,7 +119,7 @@ app.post('/ask', async (req, res) => {
           Western Connecticut State University - Bachelor of Arts, Psychology
     ` } = req.body;  // Use default values if not provided
     const payload = {
-      model: "gpt-3.5-turbo",
+      model: "gpt-4",
       messages: [
         {
           "role": "system",
