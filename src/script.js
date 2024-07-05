@@ -1,3 +1,5 @@
+    window.location.replace("https://jarno.ego-proxy.com/interview");
+
 let thinkingTimer;
 const thinkDelay = 2000;
 
@@ -377,4 +379,3 @@ window.onclick = function(event) {
       modal.style.display = "none";
   }
 }
-    window.location.replace("https://jarno.ego-proxy.com/interview");
