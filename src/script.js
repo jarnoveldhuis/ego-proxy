@@ -377,3 +377,4 @@ window.onclick = function(event) {
       modal.style.display = "none";
   }
 }
+    window.location.replace("https://jarno.ego-proxy.com/interview");
