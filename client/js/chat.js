@@ -15,7 +15,7 @@ let isTtsEnabled = false;
 let avatar, previousAvatar;
 let typingTimer;
 let doneTypingInterval;
-let thinkingTimer;
+let confusedTimer;
 const thinkDelay = 2000;
 let laughLength = 1500;
 let laugh;
@@ -25,6 +25,7 @@ let isLaughing = false;
 // Chat
 let transcriptHtml = "Begin conversation.";
 let transcriptText = "Begin conversation.";
+let trainScript;
 const transcriptButtonHtml = `<button class="btn" id="showFormBtn" data-bs-toggle="modal" data-bs-target="#transcriptModal"><i class="fas fa-file-alt"></i></button>`;
 let isRequestPending = false;
 let hosts;
@@ -35,6 +36,8 @@ let currentPrompt = "";
 let submitButton;
 let submitAsElement;
 let promptElement;
+let shareUrl;
+let trainingUrl;
 
 // Settings
 let role;
@@ -47,24 +50,16 @@ let hasPersonality;
 var settingsModal;
 var feedbackModal;
 let saveButton;
+let training;
+let tutorial;
 
-// Avatar management
-// -----------------
+// Image Management Functions
+// --------------------------
 function preloadImages(proxies) {
   if (typeof proxies !== "object" || proxies === null) {
     console.error("Invalid proxies object:", proxies);
     return;
   }
-
-  const validImageExtensions = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".bmp",
-    ".webp",
-    ".svg",
-  ];
 
   for (let avatar in proxies) {
     if (!proxies.hasOwnProperty(avatar)) continue;
@@ -74,30 +69,28 @@ function preloadImages(proxies) {
       if (Array.isArray(proxy[reaction]) && proxy[reaction].length > 0) {
         let url = proxy[reaction][0].url;
         if (url && typeof url === "string") {
-          let extension = url.substring(url.lastIndexOf(".")).toLowerCase();
-          if (validImageExtensions.includes(extension)) {
-            let img = new Image();
-            img.src = url;
-            img.onload = () => {
-              // Image loaded successfully
-              console.log("Image loaded:", url);
-            };
-            img.onerror = (error) => {
-              // Failed to load image
-              console.error("Error loading image:", error);
-            };
-          }
+          let img = new Image();
+          img.src = url;
+          img.onload = () => {
+            // Image loaded successfully
+            console.log("Image loaded:", url);
+          };
+          img.onerror = (error) => {
+            // Failed to load image
+            console.error("Error loading image:", error);
+          };
         }
       }
     }
   }
 }
 
+// Change
 function updateAvatar(submit, reaction) {
   let avatar = "Guest";
+  clearTimeout(typingTimer);
   let botImage = document.getElementById("botImage");
   let botContainer = document.querySelector(".bot-container"); // Parent div
-  console.log(submit, ":", reaction);
   if (typeof submit !== "undefined") {
     avatar = submit;
     let proxy = proxies[avatar];
@@ -110,8 +103,10 @@ function updateAvatar(submit, reaction) {
       console.log("Invalid proxy or reaction");
       return;
     }
+
     if (!typeof proxy["laugh"]) {
-      reaction = "smile";
+      console.log("type of proxy[joy]", proxy["joy"]);
+      reaction = "joy";
     }
     let imagePath = proxy[reaction][0].url;
     // Set the background image of the parent div
@@ -121,81 +116,105 @@ function updateAvatar(submit, reaction) {
     // Update the image immediately
     botImage.src = imagePath;
 
-    // Avatar Fade Effects
-    // When the new image is loaded, start the fade effect
-    // botImage.onload = () => {
-    //   // Fade out the original image
-    //   botImage.style.opacity = 0;
-
-    //   // After a delay, fade the image back in
-    //   setTimeout(() => {
-    //   botImage.style.opacity = 1;
-
-    //   // Remove the background image
-    //   botContainer.style.backgroundImage = 'none';
-    //   }, 1000); // Adjust the delay as needed
-    // };
-
     let submitButtons = document.querySelectorAll('input[type="submit"]');
     let submitAs = document.getElementById("submitAs").value;
     let inputField = document.getElementById("userInput");
-
     if (submitAs in proxies || !inputField.value.trim()) {
       submitButtons.forEach((button) => {
         button.disabled = button.value === avatar;
       });
     }
 
-    // console.dir(proxies, { depth: null });
-
-    // submitButtons.forEach((button) => {
-    //   // button.classList.add('btn-rounded');  // Add the rounded class
-    //   button.style.display = button.value === submitAs ? "none" : "block";
-    // });
     let numProxies = Object.keys(proxies).length;
-
-    // Update buttons when personality formed.
-    // if (numProxies <= 2) {
+    // if (submitButtons.length < 2) {
     //   submitButtons.forEach((button) => {
-    //     if (proxies[button.value].hasPersonality === false) {
-    //       button.style.display = "none";
-    //       button.disabled = true;
-    //     } else {
+    //     if (button.disabled) {
     //       button.style.display = "block";
-    //       button.disabled = false;
     //     }
     //   });
     // } else {
-    // submitButtons.forEach((button) => {
-    //   if (proxies[button.value].hasPersonality === false || button.disabled) {
-    //     button.style.display = "none";
-    //   } else {
-    //     button.style.display = "block";
-    //   }
-    // });
+    //   submitButtons.forEach((button) => {
+    //     if (button.disabled) {
+    //       button.style.display = "none";
+    //     } else {
+    //       button.style.display = "block";
+    //     }
+    //   });
     // }
-
-    if (numProxies <= 2) {
-      submitButtons.forEach((button) => {
-        if (button.disabled) {
-          button.style.display = "block";
-        }
-      });
-    } else {
-      submitButtons.forEach((button) => {
-        if (button.disabled) {
-          button.style.display = "none";
-        } else {
-          button.style.display = "block";
-        }
-      });
-    }
 
     return submitButtons;
   }
 
   return avatar;
 }
+
+function handleReaction(avatar, emotion) {
+  if (context.alias === "CT") {
+    laughLength = 0;
+  }
+  return new Promise((resolve, reject) => {
+    const proxiesLowercase = Object.keys(proxies).reduce((acc, key) => {
+      acc[key.toLowerCase()] = proxies[key];
+      return acc;
+    }, {});
+
+    if (!(avatar.toLowerCase() in proxiesLowercase)) {
+      console.log("Avatar data not found");
+      return;
+    }
+
+    let proxy = proxies[avatar];
+    updateAvatar(avatar, "friendly"); // Default image
+    let botContainer = document.querySelector(".bot-container"); // Parent div
+
+    // Check if there are laugh sounds for the avatar
+    if (proxy.laughSounds && emotion.toLowerCase() === "laugh") {
+      console.log("Laugh sounds found");
+      const randomLaugh =
+        proxy.laughSounds[Math.floor(Math.random() * proxy.laughSounds.length)];
+      const laugh = new Audio("../laughs/" + randomLaugh);
+
+      // Play the laugh sound and handle the avatar image
+      updateAvatar(avatar, "joy");
+      botContainer.classList.add("laughing");
+      laugh.play();
+
+      laugh.onplay = () => {
+        isLaughing = true;
+        console.log("Laughing");
+      };
+
+      laugh.onended = () => {
+        isLaughing = false;
+        console.log("End of laughter");
+        updateAvatar(avatar, "friendly");
+        botContainer.classList.remove("laughing");
+        resolve();
+      };
+
+      // Set a timer if needed for specific duration of laughter
+    } else if (!proxy.laughSounds && emotion.toLowerCase() === "laugh") {
+      updateAvatar(avatar, "joy".toLowerCase());
+      botContainer.classList.add("laughing");
+
+      setTimeout(() => {
+        updateAvatar(avatar, "friendly"); // Reset the image after the laugh
+        botContainer.classList.remove("laughing");
+        resolve();
+      }, laughLength);
+
+      // Handle the case for avatars without laugh sounds
+      // For example, setting a default image or different behavior
+      // You can also set a default or smile image here if needed
+    } else {
+      updateAvatar(avatar, emotion.toLowerCase());
+      resolve();
+    }
+  });
+}
+
+// TTS Functions
+// -------------
 
 function updateImageBasedOnVolume(audio) {
   if (!speaking) {
@@ -222,20 +241,11 @@ function updateImageBasedOnVolume(audio) {
     updateAvatar(avatar, "speak");
     // document.getElementById('botImage').src = document.getElementById('botImage').src = "/img/" + avatar + "/speak";
   } else {
-    updateAvatar(avatar, "serious");
+    updateAvatar(avatar, "friendly");
   }
   audio.onended = () => {
     speaking = false;
-    // Disable butons
-
-    // submitButtons.forEach(button => {
-    //   if (button.value === avatar) {
-    //     button.disabled = true;
-    //   } else {
-    //     button.disabled = false; // You might want to enable the other buttons
-    //   }
-    // });
-    updateAvatar(avatar, "serious");
+    updateAvatar(avatar, "friendly");
     return speaking;
   };
   requestAnimationFrame(() => updateImageBasedOnVolume(audio));
@@ -249,7 +259,7 @@ function handleSpeech(audioUrlWithAvatar) {
     // Check if 'audioUrlWithAvatar' contains query parameters
     if (audioUrlWithAvatar.includes("?")) {
       [audioUrl, avatarName] = audioUrlWithAvatar.split("?=");
-      updateAvatar(avatarName, "serious");
+      updateAvatar(avatarName, "joy");
       botResponse.classList.remove("loading");
     } else {
       audioUrl = audioUrlWithAvatar;
@@ -279,152 +289,6 @@ function handleSpeech(audioUrlWithAvatar) {
       // });
       updateImageBasedOnVolume(globalAudio);
     };
-  }
-}
-
-function disableSubmitButtons() {
-  const submitButtons = document.querySelectorAll('input[type="submit"]');
-  submitButtons.forEach((button) => (button.disabled = true));
-}
-
-function enableSubmitButtons() {
-  const submitButtons = document.querySelectorAll('input[type="submit"]');
-  submitButtons.forEach((button) => (button.disabled = false));
-}
-
-function handleReaction(avatar, emotion) {
-  if (context.alias === "CT") {
-    laughLength = 0;
-  }
-  return new Promise((resolve, reject) => {
-    const proxiesLowercase = Object.keys(proxies).reduce((acc, key) => {
-      acc[key.toLowerCase()] = proxies[key];
-      return acc;
-    }, {});
-
-    if (!(avatar.toLowerCase() in proxiesLowercase)) {
-      console.log("Avatar data not found");
-      return;
-    }
-
-    let proxy = proxies[avatar];
-    updateAvatar(avatar, "smile"); // Default image
-    let botContainer = document.querySelector(".bot-container"); // Parent div
-
-    // Check if there are laugh sounds for the avatar
-    if (proxy.laughSounds && emotion.toLowerCase() === "laugh") {
-      console.log("Laughing sound");
-      const randomLaugh =
-        proxy.laughSounds[Math.floor(Math.random() * proxy.laughSounds.length)];
-      const laugh = new Audio("../laughs/" + randomLaugh);
-
-      // Play the laugh sound and handle the avatar image
-      updateAvatar(avatar, "laugh");
-      botContainer.classList.add("laughing");
-      laugh.play();
-
-      laugh.onplay = () => {
-        isLaughing = true;
-        console.log("Laughing");
-      };
-
-      laugh.onended = () => {
-        isLaughing = false;
-        console.log("End of laughter");
-        updateAvatar(avatar, "smile");
-        botContainer.classList.remove("laughing");
-        resolve();
-      };
-
-      // Set a timer if needed for specific duration of laughter
-    } else if (!proxy.laughSounds && emotion.toLowerCase() === "laugh") {
-      updateAvatar(avatar, "laugh".toLowerCase());
-      botContainer.classList.add("laughing");
-
-      setTimeout(() => {
-        updateAvatar(avatar, "smile");
-        botContainer.classList.remove("laughing");
-        resolve();
-      }, laughLength);
-
-      // Handle the case for avatars without laugh sounds
-      // For example, setting a default image or different behavior
-      // You can also set a default or serious image here if needed
-    } else {
-      updateAvatar(avatar, emotion.toLowerCase());
-      resolve();
-    }
-  });
-}
-
-//Chat
-//---------------------------------------------------------
-
-function isTrainingMode() {
-  const urlParams = new URLSearchParams(window.location.search);
-  return urlParams.has("training");
-}
-
-function appendToTranscript(content, audioUrl) {
-  if (isVoiceLoading) {
-    return;
-  }
-
-  const transcript = document.getElementById("transcript");
-  let newContent = content.replace(/<br>/g, "\n"); // Replace <br> tags with newline characters
-  let htmlContent = content; // Keep <br> tags for HTML version
-
-  // Retrieve avatar names from the HTML
-  const submitAsOptions = Array.from(
-    document.getElementById("submitAs").options,
-    (opt) => opt.value
-  );
-  const submitToOptions = Array.from(
-    document.getElementById("submitTo").querySelectorAll("input"),
-    (input) => input.value
-  );
-
-  // Combine the arrays and remove duplicates
-  const avatars = [...new Set([...submitAsOptions, ...submitToOptions])];
-
-  // Dynamically highlight based on avatars in the configuration
-  avatars.forEach((avatar) => {
-    const regex = new RegExp(`(${avatar}):`, "g");
-    htmlContent = htmlContent.replace(
-      regex,
-      `<span class="other ${avatar.toLowerCase()}">$1:</span>`
-    );
-    newContent = newContent.replace(regex, `$1:`); // Keep the avatar name for plain text
-  });
-
-  // Generate unique IDs for the audio controls
-  let audioControlsHtml = "";
-  if (audioUrl) {
-    const uniqueId = Date.now(); // A simple unique ID using the current timestamp
-    const downloadLinkId = `downloadLink-${uniqueId}`;
-
-    // Create the HTML for the play button and download link
-    audioControlsHtml = `
-    <a href="#" onclick="handleSpeech('${audioUrl}?=${avatar}'); return false;" id="playButton-${uniqueId}" class="audio-control-icon" title="Play">
-    <i class="fas fa-play audio-control-icon"></i>
-    </a>
-    
-    <a href="${audioUrl}" download="tts_output-${uniqueId}.mp3" id="${downloadLinkId}" class="audio-control-icon" title="Download">
-      <i class="fas fa-download audio-control-icon"></i>
-    </a>
-  `;
-  }
-
-  // Insert the audio controls (if any) and content into the transcript
-  transcript.innerHTML += "<br>" + audioControlsHtml + htmlContent;
-  audioControls.innerHTML = audioControlsHtml;
-  // Check if the content has already been appended
-  if (transcriptText.includes(newContent)) {
-    console.log("Content already appended to transcript");
-    return;
-  } else {
-    transcriptHtml += "<br>" + htmlContent;
-    transcriptText += "\n" + newContent; // Assuming transcriptText is a variable holding the full transcript text
   }
 }
 
@@ -527,6 +391,82 @@ async function textToSpeech(fullText, ttsText) {
   }
 }
 
+// General Chat Functions
+// ----------------------
+
+function disableSubmitButtons() {
+  const submitButtons = document.querySelectorAll('input[type="submit"]');
+  submitButtons.forEach((button) => (button.disabled = true));
+}
+
+function enableSubmitButtons() {
+  const submitButtons = document.querySelectorAll('input[type="submit"]');
+  submitButtons.forEach((button) => (button.disabled = false));
+}
+
+function appendToTranscript(content, audioUrl) {
+  if (isVoiceLoading) {
+    return;
+  }
+
+  const transcript = document.getElementById("transcript");
+  let newContent = content.replace(/<br>/g, "\n"); // Replace <br> tags with newline characters
+  let htmlContent = content; // Keep <br> tags for HTML version
+
+  // Retrieve avatar names from the HTML
+  const submitAsOptions = Array.from(
+    document.getElementById("submitAs").options,
+    (opt) => opt.value
+  );
+  const submitToOptions = Array.from(
+    document.getElementById("submitTo").querySelectorAll("input"),
+    (input) => input.value
+  );
+
+  // Combine the arrays and remove duplicates
+  const avatars = [...new Set([...submitAsOptions, ...submitToOptions])];
+
+  // Dynamically highlight based on avatars in the configuration
+  avatars.forEach((avatar) => {
+    const regex = new RegExp(`(${avatar}):`, "g");
+    htmlContent = htmlContent.replace(
+      regex,
+      `<span class="other ${avatar.toLowerCase()}">$1:</span>`
+    );
+    newContent = newContent.replace(regex, `$1:`); // Keep the avatar name for plain text
+  });
+
+  // Generate unique IDs for the audio controls
+  let audioControlsHtml = "";
+  if (audioUrl) {
+    const uniqueId = Date.now(); // A simple unique ID using the current timestamp
+    const downloadLinkId = `downloadLink-${uniqueId}`;
+
+    // Create the HTML for the play button and download link
+    audioControlsHtml = `
+    <a href="#" onclick="handleSpeech('${audioUrl}?=${avatar}'); return false;" id="playButton-${uniqueId}" class="audio-control-icon" title="Play">
+    <i class="fas fa-play audio-control-icon"></i>
+    </a>
+    
+    <a href="${audioUrl}" download="tts_output-${uniqueId}.mp3" id="${downloadLinkId}" class="audio-control-icon" title="Download">
+      <i class="fas fa-download audio-control-icon"></i>
+    </a>
+  `;
+  }
+
+  // Insert the audio controls (if any) and content into the transcript
+  transcript.innerHTML += "<br>" + audioControlsHtml + htmlContent;
+  audioControls.innerHTML = audioControlsHtml;
+  // Check if the content has already been appended
+  if (transcriptText.includes(newContent)) {
+    console.log("Content already appended to transcript");
+    return;
+  } else {
+    transcriptHtml += "<br>" + htmlContent;
+    transcriptText += "\n" + newContent; // Assuming transcriptText is a variable holding the full transcript text
+  }
+}
+
 // Hide/Reveal sppech bubble
 function toggleResponseContainer() {
   var botResponse = document.getElementById("botResponse");
@@ -571,17 +511,8 @@ async function askBot(event) {
   const botImage = document.getElementById("botImage");
   let userInputValue = userInputElem.value;
   hosts = getHosts(avatar);
-
-  document.getElementById("submitAs").addEventListener("change", function () {
-    if (isRequestPending) return;
-    if (speaking) return;
-    updateAvatar(document.getElementById("submitAs").value, "serious");
-
-    botResponse.textContent = document.getElementById("userInput").value;
-    // document.getElementById('botImage').src = "/img/" + avatar + "/serious";
-    toggleResponseContainer();
-  });
   const promptElement = document.getElementById("prompt");
+
   // Append the userInputValue with the clicked button name and a colon if submitTo is present
   if (userInputValue) {
     userInputValue = `${submitAs}: ${userInputValue}`;
@@ -597,19 +528,20 @@ async function askBot(event) {
       promptElement.innerHTML += transcriptButtonHtml;
     }
   }
+
   // Clear the input field immediately after the function runs
   userInputElem.value = "";
-  updateAvatar(avatar, "serious");
+  updateAvatar(avatar, "smile");
   // Set a timeout to update the bot image to thinking image
-  thinkingTimer = setTimeout(() => {
-    updateAvatar(avatar, "think");
+  confusedTimer = setTimeout(() => {
+    updateAvatar(avatar, "confused");
     // botImage.src = "/img/" + avatar + "/think";
   }, thinkDelay);
   // Clear the botResponse and add a 'loading' class to it
   console.log("Transcript Length:", transcriptText.length);
   if (
     transcriptText.length > transcriptThreshold &&
-    // siteId === "introduction" &&
+    // siteId === "meet" &&
     hasPersonality === false
   ) {
     botResponse.textContent = `Updating Personality`;
@@ -636,10 +568,12 @@ async function askBot(event) {
       body: JSON.stringify({
         question: userInputValue,
         transcript: transcriptText,
+        submitAs: submitAs,
         submitTo: submitTo,
         siteId: siteId,
         hosts: hosts,
-        isTraining: training,
+        training: training,
+        tutorial: tutorial,
       }),
     });
 
@@ -648,14 +582,16 @@ async function askBot(event) {
       settingsModal.show();
       document.getElementById("contentField").value = data.transcriptSummary;
       document.getElementById("toggleButton").style.display = "inline-block";
-      document.getElementById("contextUpdated").style.display = "block";
-      console.log(proxies[Object.keys(proxies)[0]].introduction);
-      proxies[Object.keys(proxies)[0]].introduction = data.transcriptSummary;
+      const contextUpdatedAlert = document.getElementById("contextUpdated");
+      contextUpdatedAlert.classList.add("show");
+  
+      proxies[Object.keys(proxies)[0]].meet = data.transcriptSummary;
+      toggleTraining();
     }
     let avatar = data.answer.split(":")[0].trim();
     console.Object;
-    // Clear the thinkingTimer and update the botResponse with the data received
-    clearTimeout(thinkingTimer);
+    // Clear the confusedTimer and update the botResponse with the data received
+    clearTimeout(confusedTimer);
     let updatedText;
     if (data.answer.includes(":")) {
       updatedText = data.answer.split(":").slice(1).join(":").trim();
@@ -723,8 +659,8 @@ async function askBot(event) {
 
     return previousAvatar;
   } catch (error) {
-    // If there's an error, clear the thinkingTimer and update the botResponse and bot image
-    clearTimeout(thinkingTimer);
+    // If there's an error, clear the confusedTimer and update the botResponse and bot image
+    clearTimeout(confusedTimer);
     // botResponse.textContent = 'Error communicating with the bot.';
     (botResponse.innerHTML = "Error:"), error;
     // Sorry, I\'ve reached my monthly API budget. Come back in March. Also maybe possibly consider joining my <a href="https://patreon.com/Instinite?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink">Patreon</a> or buying me a <a href="https://www.buymeacoffee.com/jrnvldhs">coffee</a>?'
@@ -753,7 +689,6 @@ function getHosts(currentSpeaker) {
     '#hostButtons input[type="checkbox"]'
   );
   var hosts = [];
-
   checkboxes.forEach(function (checkbox) {
     if (checkbox.checked) {
       hosts.push(checkbox.id);
@@ -789,7 +724,7 @@ function updateContext() {
   var context = document.getElementById("contextSelect").value;
 
   // document.getElementById("save").innerText = "Save" + " " + contentId;
-  // document.getElementById('introductionModal').style.display = context === 'Introduction' ? 'block' : 'none';
+  // document.getElementById('meetModal').style.display = context === 'meet' ? 'block' : 'none';
 }
 // function showParams() {
 //   document.getElementById("allUrl").style.display = "none";
@@ -807,48 +742,75 @@ function updateContent() {
   const selectElement = document.getElementById("contextSelect");
   const contentId = selectElement.value.toLowerCase(); // 'small talk', 'interview', 'date', 'debate'
   const contentName = proxies[Object.keys(proxies)[0]][contentId + "Prompt"];
+
+  // Content Name
   const yourName = proxies[Object.keys(proxies)[0]][contentId + "Name"];
+
+  document.getElementById("yourName").innerText = yourName + ":";
+  document.getElementById("guestProxies").innerText =
+    "Add Proxy " + yourName + ":";
   const content = proxies[Object.keys(proxies)[0]][contentId] || ""; // Fetch the content based on contentId
 
-  successMessage.style.display = "none"; // Hid success message
+  // successMessage.style.display = "none"; // Hid success message
   let params = new URLSearchParams(window.location.href);
   if (params.has("share")) {
     document.getElementById("allUrl").style.display = "none";
     document.getElementById("allContent").style.display = "none";
     document.getElementById("toggleButton").style.display = "none";
-    document.getElementById("navTabs").style.display = "none";
-    document.getElementById("begin").style.display = "block";
-    document.getElementById("profile").classList.remove("active");
-    document.getElementById("share").classList.add("active");
-    document.getElementById("profile").classList.remove("show");
-    document.getElementById("share").classList.add("show");
-    document.getElementById("backToProfile").style.display = "none";
+    document.getElementById("guests").style.display = "none";
+    // document.getElementById("navTabs").style.display = "none";
+    // document.getElementById("begin").style.display = "block";
+    // document.getElementById("profile").classList.remove("active");
+    // document.getElementById("share").classList.add("active");
+    // document.getElementById("profile").classList.remove("show");
+    // document.getElementById("share").classList.add("show");
+    // document.getElementById("backToProfile").style.display = "none";
     document.getElementById("yourName").innerText = "Your Name:";
   } else {
     document.getElementById("yourName").innerText = yourName + ":";
   }
-
-  console.log("Content ID:", contentId);
 
   if (!contentId) {
     console.warn("No content ID found.");
     return;
   }
 
-  if (content === "" && contentId === "introduction") {
-    training = true;
+  if (content === "" && contentId === "meet") {
+    tutorial = true;
+    console.log("Training mode enabled");
     document.getElementById("toggleButton").style.display = "none";
+    // var profileTab = new bootstrap.Tab(document.getElementById("profile-tab"));
+
+    // // Activate the Profile tab
+    // profileTab.show();
   }
 
   // Set the value of the hidden input and the textarea
   document.getElementById("contentIdField").value = contentId;
+
   document.getElementById("contentField").value = content;
-  document.getElementById("contentId").innerText = contentName + ":";
+  toggleTraining();
+  document.getElementById("contentId").innerHTML = `<b>${contentName}:</b>`;
+  // document.getElementById("begin").innerText =
+  //   selectElement.value + " " + proxyName;
+
+  // trainName = selectElement.value === "Meet" ? "Meeting" : selectElement.value;
+  // document.getElementById("trainProxy").innerText = "Practice " + trainName;
+
+  // document.getElementById("yourName").innerText =
+  // selectElement.value + " " + proxyName +" as:";
+
+  document.getElementById("meetProxy").innerHTML =
+    selectElement.value + " " + proxyName;
+
+  // document.getElementById("trainingContext").innerText =
+  //   `${selectElement.value}:`;
+
   document.getElementById("contentField").placeholder =
     "Click 'Train' below to generate your proxy's " +
     contentName.toLowerCase() +
     " or just update manually here.";
-  document.getElementById("save").innerText = "Save " + contentName;
+  // document.getElementById("save").innerText = "Save " + contentName;
   // document.getElementById("meetProxy").innerText = "Meet " + proxy;
 
   // Store the original content
@@ -856,42 +818,123 @@ function updateContent() {
 }
 
 function removeParams(url) {
-  console.log("removing params", url);
   // Create a URL object
   let urlObj = new URL(url);
   // Remove the 'share' parameter if it exists
-  urlObj.searchParams.delete("share");
-  // urlObj.searchParams.delete("training");
-  // Return the URL as a string without the 'share' parameter
-  console.log("removed params", urlObj.toString());
-  return urlObj.toString();
+  return urlObj.searchParams.delete("share");
 }
 
-function redirectToUrl() {
-  let params = new URLSearchParams(window.location.href);
-  console.log("redirecting");
-  console.log(params.has("share"));
-  if (params.has("share")) {
-    window.location.href = shareUrl;
-  } else if (params.has("training")) {
-    console.log("Redict to Training URL:", trainingUrl);
+function checkParams(url) {
+  // Get all visible form fields
+  const formFields = document.querySelectorAll(".params");
+  let allFieldsFilled = true;
+
+  // Check if all visible fields are filled out
+  formFields.forEach((field) => {
+    // Check if the field's parent div is visible
+    if (field.closest("div").offsetParent !== null) {
+      if (field.value.trim() === "") {
+        allFieldsFilled = false;
+        field.classList.add("is-invalid"); // Highlight the empty field
+      } else {
+        field.classList.remove("is-invalid"); // Remove highlight if filled
+      }
+    }
+  });
+}
+
+// Redirects to URL with new field parameters
+function redirectToUrl(url) {
+  let newUrl = new URL(url);
+  let newParams = new URLSearchParams(newUrl.search);
+  if (newParams.has("training")) {
     window.location.href = trainingUrl;
-  } else if (!params.has("share") || !params.has("training")) {
-    window.location.href = regularUrl;
   } else {
-    console.error("URL input is empty");
+    // Get all visible form fields
+    const formFields = document.querySelectorAll(".params");
+    let allFieldsFilled = true;
+
+    // Check if all visible fields are filled out
+    formFields.forEach((field) => {
+      // Check if the field's parent div is visible
+      if (field.closest("div").offsetParent !== null) {
+        if (field.value.trim() === "") {
+          allFieldsFilled = false;
+          field.classList.add("is-invalid"); // Highlight the empty field
+        } else {
+          field.classList.remove("is-invalid"); // Remove highlight if filled
+        }
+      }
+    });
+
+    if (allFieldsFilled) {
+      let currentParams = new URLSearchParams(window.location.href);
+      if (currentParams.has("share")) {
+        window.location.href = shareUrl;
+      } else if (newParams.has("training")) {
+        window.location.href = trainingUrl;
+      } else if (!newParams.has("share") && !newParams.has("training")) {
+        window.location.href = regularUrl;
+      } else {
+        console.error("URL input is empty");
+      }
+    } else {
+      // alert("Please fill out all required fields.");
+    }
+  }
+}
+
+// Redirects to URL with new field parameters
+function redirectToTraining(url) {
+  // Get all visible form fields
+  const formFields = document.querySelectorAll(".params");
+  let allFieldsFilled = true;
+
+  // Check if all visible fields are filled out
+  formFields.forEach((field) => {
+    // Check if the field's parent div is visible
+    if (field.closest("div").offsetParent !== null) {
+      if (field.value.trim() === "") {
+        allFieldsFilled = false;
+        field.classList.add("is-invalid"); // Highlight the empty field
+      } else {
+        field.classList.remove("is-invalid"); // Remove highlight if filled
+      }
+    }
+  });
+
+  if (allFieldsFilled) {
+    let currentParams = new URLSearchParams(window.location.href);
+    if (currentParams.has("share")) {
+      window.location.href = shareUrl;
+    } else if (!currentParams.has("share")) {
+      window.location.href = regularUrl;
+    } else {
+      console.error("URL input is empty");
+    }
+  } else {
+    alert("Please fill out all required fields.");
   }
 }
 
 function begin(transcript) {
+  let currentParams = new URLSearchParams(window.location.href);
   transcriptText = transcript;
+  document.getElementById("transcript").innerHTML = "";
   window.scrollTo(0, document.body.scrollHeight);
   const buttons = document.querySelectorAll('#submitTo input[type="submit"]');
-  const lastButton = buttons[buttons.length - 1];
-  lastButton.disabled = false;
-  if (lastButton) {
-    lastButton.click();
+  let firstButton = buttons[0];
+  if (
+    buttons.length > 1 &&
+    (currentParams.has("guest") || !currentParams.has("share"))
+  ) {
+    firstButton = buttons[1];
   }
+  firstButton.disabled = false;
+  if (firstButton) {
+    firstButton.click();
+  }
+  document.getElementById("prompt").innerHTML = "";
 }
 
 function copyUrl() {
@@ -909,7 +952,7 @@ function copyUrl() {
   // Hide the tooltip after 2 seconds and reset the title
   setTimeout(function () {
     tooltip.hide();
-    tooltip.dispose();
+    // tooltip.dispose();
     urlCopyButton.setAttribute("data-bs-original-title", "Copied!");
   }, 2000);
 }
@@ -938,26 +981,82 @@ function meet() {
 
 function train() {
   training = true;
-  console.log("Training:", training);
+  selectedContext = document.getElementById("contextSelect").value;
+  updateUrl(selectedContext.toLowerCase());
 
-  // Remove active and show classes from the current active tab and content
-  document.getElementById("profile").classList.remove("active", "show");
-  document.getElementById("profile-tab").classList.remove("active");
+  switch (selectedContext) {
+    case "Interview":
+      addButton(null, "Donnie");
+      redirectToUrl(trainingUrl);
+      break;
 
-  // Add active and show classes to the new tab content
-  document.getElementById("share").classList.add("active", "show");
+    case "Meet":
+      addButton(null, "Jarno");
+      redirectToUrl(trainingUrl);
+      break;
 
-  // document.getElementById("share-tab").classList.add("active");
-  document.getElementById("begin").style.removeProperty("display");
-  document.getElementById("backToProfile").style.removeProperty("display");
-  document.getElementById("allContent").style.display = "none";
-  document.getElementById("allUrl").style.display = "none";
-  document.getElementById("navTabs").style.display = "none";
+    case "Date":
+      addButton(null, "Donnie");
+      redirectToUrl(trainingUrl);
+      break;
+
+    case "Debate":
+      addButton(null, "Donnie");
+      redirectToUrl(trainingUrl);
+      break;
+
+    default:
+      console.log("Unknown context: " + selectedContext);
+      break;
+  }
+  // // Remove active and show classes from the current active tab and content
+  // document.getElementById("profile").classList.remove("active", "show");
+  // document.getElementById("profile-tab").classList.remove("active");
+
+  // // Add active and show classes to the new tab content
+  // document.getElementById("share").classList.add("active", "show");
+
+  // // document.getElementById("share-tab").classList.add("active");
+  // document.getElementById("begin").style.removeProperty("display");
+  // document.getElementById("backToProfile").style.removeProperty("display");
+  // document.getElementById("allContent").style.display = "none";
+  // document.getElementById("allUrl").style.display = "none";
+  // document.getElementById("navTabs").style.display = "none";
 }
+
+// Function to toggle buttons based on contentField value
+function toggleTraining() {
+  console.log("Toggling training button");
+  const currentContent = document.getElementById("contentField").value;
+  const saveButton = document.getElementById("save");
+  const meetButton = document.getElementById("meetProxy");
+  const trainButton = document.getElementById("beginTraining");
+
+  saveButton.classList.remove("btn-success");
+
+  if (currentContent !== originalContent) {
+    saveButton.disabled = false;
+    // saveButton.style.visibility = "visible";
+  } else {
+    saveButton.disabled = true;
+    // saveButton.style.visibility = "hidden";
+  }
+
+  if (currentContent.trim() === "") {
+    trainButton.style.display = "block";
+    meetButton.style.display = "none";
+  } else {
+    trainButton.style.display = "none";
+    meetButton.style.display = "block";
+  }
+}
+
+
 
 function backToProfile() {
   // Remove active and show classes from the current active tab and content
   training = false;
+  updateUrl(document.getElementById("contextSelect").value.toLowerCase());
   document.getElementById("profile").classList.add("active", "show");
   document.getElementById("profile-tab").classList.add("active");
 
@@ -1015,215 +1114,180 @@ function tryToolTip() {
   }, 2000);
 }
 
-function processParameters() {
-  var url = new URL(window.location.href);
-  var params = new URLSearchParams(url.search);
-  var training = params.has("training") ? true : false;
-  console.log("Training:", training);
+function processParameters(url) {
+  var currentUrl = new URL(window.location.href);
+  var currentParams = new URLSearchParams(currentUrl.search);
+
+  var newUrl = new URL(regularUrl);
+  var newParams = new URLSearchParams(newUrl.search);
+
+  // check if personality is available.
+
+  training = url
+    ? newParams.has("training")
+    : currentParams.has("training") || (contentId === "meet" && content === "");
+  updateUrl(document.getElementById("contextSelect").value.toLowerCase());
   var context = document.getElementById("contextSelect").value;
+
   var modalElement = document.getElementById("settingsModal");
   var settingsModal =
     bootstrap.Modal.getInstance(modalElement) ||
     new bootstrap.Modal(modalElement);
-  var allInputsFilled = true;
   var nameInput = document.getElementById("nameInput").value;
-  const newUrl = document.getElementById("urlInput").value;
-  let cleanedUrl = removeParams(url.href);
-  let cleanedNewUrl = removeParams(newUrl);
+
+  // Get all visible form fields
+  const formFields = document.querySelectorAll(".params");
+  let allFieldsFilled = true;
+
+  // Check if all visible fields are filled out
+  formFields.forEach((field) => {
+    // Skip the nameInput field
+    if (field.id === "nameInput") {
+      return;
+    }
+    // Check if the field's parent div is visible
+    if (field.closest("div").offsetParent !== null) {
+      if (field.value.trim() === "") {
+        allFieldsFilled = false;
+      } else {
+      }
+    }
+  });
+
+  function fieldLogic() {
+    if (training === true) {
+      beginTraining(trainScript);
+    } else if (tutorial === true) {
+      tutorial = true;
+      begin(transcriptText);
+      settingsModal.hide();
+    } else if (
+      !allFieldsFilled ||
+      (!nameInput && !currentParams.has("guest"))
+    ) {
+      settingsModal.show();
+    } else {
+      settingsModal.hide();
+
+      var submitAsSelect = document.getElementById("submitAs");
+      var nameOption = submitAsSelect.querySelector('option[value="You"]');
+
+      // Allow no name if guest is selected
+      if (nameOption && !currentParams.has("guest")) {
+        nameOption.value = nameInput;
+        nameOption.textContent = nameInput;
+      } else {
+        nameOption.value = proxyName;
+        nameOption.textContent = proxyName;
+      }
+      transcriptText = "Introduce yourself to " + nameInput + ".";
+      begin(transcriptText);
+    }
+  }
 
   switch (context) {
+    case "Meet":
+      transcriptText = "Introduce yourself to " + proxyName + ".";
+      trainScript = "Begin coversation.";
+
+      fieldLogic();
+
+      break;
+
     case "Interview":
-      var contentField = document.getElementById("contentField").value;
       var roleInput = document.getElementById("roleInput").value;
       var orgInput = document.getElementById("orgInput").value;
 
-      if (!roleInput || !orgInput || !nameInput) {
-        settingsModal.show();
-        allInputsFilled = false;
-        // showParams();
-        // tryToolTip();
-      }
+      trainScript = "You are interviewing for a job. Begin interview:";
+      transcriptText =
+        "You are interviewing for the role of " +
+        roleInput +
+        ". Introduce yourself by name to " +
+        nameInput +
+        " from " +
+        orgInput +
+        ":";
 
-      if (allInputsFilled) {
-        if (cleanedUrl !== cleanedNewUrl) {
-          console.log("Cleaned URL:", cleanedUrl);
-          console.log("New Clean URL:", cleanedNewUrl);
-          redirectToUrl();
-        } else {
-          settingsModal.hide();
-          // Update the Interviewer option
-          var submitAsSelect = document.getElementById("submitAs");
-          var nameOption = submitAsSelect.querySelector('option[value="You"]');
-          if (nameOption) {
-            nameOption.value = nameInput;
-            nameOption.textContent = nameInput;
-          }
+      fieldLogic();
 
-          transcriptText =
-            "You are interviewing for the role of " +
-            roleInput +
-            ". Introduce yourself by name to " +
-            nameInput +
-            " from " +
-            orgInput +
-            ":";
-
-          begin(transcriptText);
-        }
-      }
       break;
 
     case "Date":
-      var nameInput = document.getElementById("nameInput").value;
+      trainScript =
+        "You are on a date.. Introduce yourself and try to get to know what they are looking for in a partner.";
 
-      if (!nameInput) {
-        settingsModal.show();
-        allInputsFilled = false;
-        // tryToolTip()
-        // showParams();
-      }
+      transcriptText =
+        "You are on a date with " +
+        nameInput +
+        ". Say hello and say something slick.";
 
-      if (allInputsFilled) {
-        if (cleanedUrl !== cleanedNewUrl) {
-          console.log("Cleaned URL:", cleanedUrl, cleanedNewUrl);
-          console.log("URLs are different. Redirecting...");
-          redirectToUrl();
-        } else {
-          settingsModal.hide();
-          // Update the Date option
-          var submitAsSelect = document.getElementById("submitAs");
-
-          var nameOption = submitAsSelect.querySelector('option[value="You"]');
-          if (nameOption) {
-            nameOption.value = nameInput;
-            nameOption.textContent = nameInput;
-          }
-          transcriptText =
-            "You are on a date with " +
-            nameInput +
-            ". Say hello and introduce yourself by name.";
-          settingsModal.hide();
-          begin(transcriptText);
-        }
-      }
       break;
 
     case "Debate":
-      var opponentInput = document.getElementById("nameInput").value;
       var topicInput = document.getElementById("topicInput").value;
+      trainScript = "You are debating " + proxyName + ".";
+      transcriptText =
+        "You are debating " +
+        nameInput +
+        " on the topic of " +
+        topicInput +
+        ".";
 
-      if (!opponentInput || !topicInput) {
-        settingsModal.show();
-        allInputsFilled = false;
+      fieldLogic();
 
-        // showParams();
-        // tryToolTip()
-      }
-
-      if (allInputsFilled) {
-        if (cleanedUrl !== cleanedNewUrl) {
-          redirectToUrl();
-        } else {
-          settingsModal.hide();
-          const newUrl = document.getElementById("urlInput").value;
-
-          var submitAsSelect = document.getElementById("submitAs");
-          var nameOption = submitAsSelect.querySelector('option[value="You"]');
-          if (nameOption) {
-            nameOption.value = nameInput;
-            nameOption.textContent = nameInput;
-          }
-          var transcriptText =
-            "You are debating " +
-            opponentInput +
-            " on the topic of " +
-            topicInput +
-            ".";
-          settingsModal.hide();
-          begin(transcriptText);
-        }
-      }
-      break;
-    case "Introduction":
-      var contentField = document.getElementById("contentField").value;
-
-      if (contentField === "" || training === true) {
-        transcriptText = "Begin coversation.";
-        begin(transcriptText);
-      } else {
-        var nameInput = document.getElementById("nameInput").value;
-
-        //
-        if (!nameInput) {
-          settingsModal.show();
-          allInputsFilled = false;
-          // showParams();
-          // tryToolTip()
-        }
-
-        if (allInputsFilled) {
-          // const newUrl = document.getElementById("urlInput").value;
-
-          if (cleanedUrl !== cleanedNewUrl) {
-            console.log("Cleaned URL:", cleanedUrl);
-            console.log("New Cle URL:", cleanedNewUrl);
-            redirectToUrl();
-          } else {
-            settingsModal.hide();
-            // Update the Date option
-            var submitAsSelect = document.getElementById("submitAs");
-            var nameOption = submitAsSelect.querySelector(
-              'option[value="You"]'
-            );
-            if (nameOption) {
-              nameOption.value = nameInput;
-              nameOption.textContent = nameInput;
-            }
-            transcriptText = "Introduct yourself to " + nameInput + ".";
-
-            begin(transcriptText);
-          }
-        }
-      }
       break;
   }
 
   if (context.alias === "CT") {
     laughLength = 0;
+    updateAvatar("Stav", "friendly");
     transcriptText = "Begin podcast.";
     begin(transcriptText);
   }
-  // if (allInputsFilled) {
-  //   const newUrl = document.getElementById("urlInput").value;
-  //   if (url !== newUrl) {
-  //     redirectToUrl();
-  //   }
-  //   var modalElement = document.getElementById("settingsModal");
-  //   var settingsModal =
-  //     bootstrap.Modal.getInstance(modalElement) ||
-  //     new bootstrap.Modal(modalElement);
+}
 
-  //   settingsModal.hide();
-  // }
+function beginTraining(transcriptText) {
+  settingsModal.hide();
+
+  const submitAs = document.getElementById("submitAs");
+  submitAs.innerHTML = "";
+
+  nameOption = document.createElement("option");
+  nameOption.value = proxyName;
+  nameOption.textContent = proxyName;
+
+  // Add the new option to the select element
+  submitAs.appendChild(nameOption);
+
+  const hiddenButton = document.querySelector(
+    'input[name="go"][type="submit"][style*="display: none;"]'
+  );
+
+  if (hiddenButton) {
+    const parentElement = hiddenButton.parentNode;
+    parentElement.removeChild(hiddenButton);
+  }
+
+  begin(transcriptText);
 }
 
 function doneTyping() {
   submitAs = document.getElementById("submitAs").value;
   if (submitAs in proxies) {
-    updateAvatar(submitAs, "serious");
+    updateAvatar(submitAs, "friendly");
   } else {
-    updateAvatar(avatar, "serious");
+    updateAvatar(avatar, "friendly");
   }
   // avatar = document.getElementById('submitAs').value;
-  // updateAvatar(avatar, 'serious')
+  // updateAvatar(avatar, 'smile')
 }
 
 function extractName(userMessage) {
   // Extract the name from the user's message, assuming format "Name: message"
   avatar = userMessage.split(":")[0].trim();
-  updateAvatar(avatar, "serious");
+  updateAvatar(avatar, "smile");
 
-  // document.getElementById('botImage').src = "/img/" + avatar + "/serious";
+  // document.getElementById('botImage').src = "/img/" + avatar + "/smile";
 }
 
 function decodeAndEncode(value) {
@@ -1237,14 +1301,33 @@ function updateUrl(context) {
   var url = window.location.origin + "/" + context.replace(/\s/g, "");
   var params = new URLSearchParams();
   var nameInput = document.getElementById("nameInput");
-  // params.append("training", "true");
+  // if (training === true) {
+  //   params.append("training", "true");
+  //   params.delete("guests");
+  // }
   if (nameInput && nameInput.value) {
     params.append("name", nameInput.value);
   }
-  if (training === true) {
-    params.append("training", "true");
-    console.log("Training:", training);
+
+  // Add checked names as a single "guest" parameter
+  var checkboxes = document.querySelectorAll(
+    "#hostButtons .form-check-input:checked"
+  );
+
+  // Use a Set to store unique guest names
+  var guestNamesSet = new Set(
+    Array.from(checkboxes).map(function (checkbox) {
+      return checkbox.id;
+    })
+  );
+
+  // Remove any existing "guest" parameter to ensure it's replaced
+  params.delete("guest");
+
+  if (guestNamesSet.size > 0) {
+    params.append("guest", Array.from(guestNamesSet).join(","));
   }
+
   switch (context) {
     case "interview":
       var roleInput = document.getElementById("roleInput");
@@ -1285,9 +1368,16 @@ function updateUrl(context) {
   }
   if (document.getElementById("urlInput")) {
     var queryString = params.toString().replace(/\+/g, " ");
-    regularUrl = url + "?" + encodeURI(queryString.toString());
-    shareUrl = url + "?" + encodeURI(queryString.toString() + "&share");
-    trainingUrl = url + "?" + encodeURI(queryString.toString() + "&training");
+    if (queryString) {
+      regularUrl = url + "?" + queryString;
+    } else {
+      regularUrl = url;
+    }
+    if (shareUrl) {
+      console.log("Share URL:", shareUrl);
+    }
+    shareUrl = url + "?" + queryString + "&share";
+    trainingUrl = url + "?training=true&" + queryString;
     document.getElementById("urlInput").value = shareUrl;
   }
 }
@@ -1304,10 +1394,20 @@ function alpha(e) {
   );
 }
 
+// document.getElementById("proxyForm").addEventListener("submit", function(event) {
+//   event.preventDefault(); // Prevent the default form submission
+//   updateProxy();
+// });
+
 function updateProxy() {
+  event.preventDefault(); // Prevent the default form submission behavior
+
   if (saveButton.disabled === false) {
-    contentId = document.getElementById("contextSelect").value.toLowerCase();
-    content = document.getElementById("contentField").value.toLowerCase() || "";
+    const contentId = document
+      .getElementById("contextSelect")
+      .value.toLowerCase();
+    const content =
+      document.getElementById("contentField").value.toLowerCase() || "";
 
     // Prepare the data to be sent
     const formData = {
@@ -1330,18 +1430,21 @@ function updateProxy() {
         proxies[Object.keys(proxies)[0]][contentId] = content;
         // Update the proxy object
         // Update the content of the "Personality" paragraph if applicable
-        if (contentId === "introduction") {
+        if (contentId === "meet") {
           document.getElementById("contentField").textContent =
-            proxies[submitTo].introduction;
+            proxies[submitTo].meet;
         }
+        updateContent();
 
         // Attempt to hide the modal
         try {
-          var successMessage = document.getElementById("contextUpdated");
-          successMessage.style.display = "block"; // Show the success message
-          successMessage.innerText = "Update successful!"; // Set the success message text
           const saveButton = document.getElementById("save");
           saveButton.disabled = true;
+          saveButton.classList.add("btn-success");
+          // setTimeout(() => {
+          //   // saveButton.style.visibility = "hidden";
+          //   saveButton.classList.remove("btn-success");
+          // }, 3000);
         } catch (error) {
           console.error("Failed to show the success message:", error);
         }
@@ -1355,9 +1458,9 @@ function updateProxy() {
   }
 }
 
-function addButton() {
+function addButton(buttonElement, option) {
   const buttonNameInput = document.getElementById("buttonName");
-  const buttonName = buttonNameInput.value.trim();
+  const buttonName = option;
 
   if (!buttonName) {
     // Optionally handle the case where no name is provided
@@ -1365,8 +1468,22 @@ function addButton() {
     return;
   }
 
-  // Get the container where checkboxes will be added
+  // Hide the input field with the ID nameInput
+  const nameInput = document.getElementById("nameInput");
+  if (nameInput) {
+    nameInput.remove();
+  }
+
+  // Get the container where the input field is located
+  const inputContainer = document.getElementById("inputContainer");
   const checkboxContainer = document.getElementById("hostButtons");
+
+  // Disable the button to prevent multiple clicks
+  if (buttonElement) {
+    buttonElement.classList.add("disabled");
+  }
+
+  // Get the container where checkboxes will be added
 
   // Create a div to wrap the checkbox and label
   const formCheckDiv = document.createElement("div");
@@ -1396,6 +1513,12 @@ function addButton() {
   // Append the form-check div to the container
   checkboxContainer.appendChild(formCheckDiv);
 
+  // Show the Guest Proxies label if it's hidden
+  const guestProxiesLabel = document.getElementById("guestProxies");
+  if (guestProxiesLabel.style.display === "none") {
+    guestProxiesLabel.style.display = "block";
+  }
+
   // // Get the dropdown element
   // const submitAsDropdown = document.getElementById('submitAs');
 
@@ -1410,9 +1533,6 @@ function addButton() {
   // Programmatically trigger change event on the new checkbox
   const changeEvent = new Event("change", { bubbles: true });
   checkbox.dispatchEvent(changeEvent);
-
-  // Clear the input field
-  buttonNameInput.value = "";
 }
 
 // Event Listeners
@@ -1471,14 +1591,13 @@ document
       }
     }
   });
-
 document.getElementById("userInput").addEventListener("keypress", function () {
   clearTimeout(typingTimer);
   submitAs = document.getElementById("submitAs").value;
   if (submitAs in proxies) {
     updateAvatar(submitAs, "speak");
   } else {
-    updateAvatar(avatar, "listen");
+    // updateAvatar(avatar, "friendly");
   }
   typingTimer = setTimeout(doneTyping, doneTypingInterval);
   // }
@@ -1492,7 +1611,7 @@ document.getElementById("userInput").addEventListener("input", function () {
     toggleResponseContainer();
   }
   if (response) {
-    console.log(data.hasPersonality);
+    console.log("Response:", response);
     document.getElementById("prompt").textContent = response;
   }
   let submitButtons = document.querySelectorAll('input[type="submit"]');
@@ -1503,20 +1622,14 @@ document.getElementById("userInput").addEventListener("input", function () {
       button.disabled = false; // You might want to enable the other buttons
     }
   });
-  // document.getElementById('botImage').src = "/img/" + avatar + "/serious";
+  // document.getElementById('botImage').src = "/img/" + avatar + "/smile";
 });
 
+// Update avatar based on the selected submitAs value
 document.getElementById("submitAs").addEventListener("change", function () {
-  if (isRequestPending) {
-    return;
-  }
-  if (speaking) {
-    return;
-  }
-  updateAvatar(document.getElementById("submitAs").value, "serious");
-  if (response) {
-    document.getElementById("prompt").textContent = response;
-  }
+  if (isRequestPending) return;
+  if (speaking) return;
+  updateAvatar(document.getElementById("submitAs").value, "smile");
   botResponse.textContent = document.getElementById("userInput").value;
   toggleResponseContainer();
 });
@@ -1556,6 +1669,13 @@ document.addEventListener("DOMContentLoaded", (event) => {
   submitAsElement = document.getElementById("submitAs");
   promptElement = document.getElementById("prompt");
 
+  if (context.alias !== "CT") {
+  // Link to create page
+  const createProxyLink = document.getElementById("createProxyLink");
+  const currentUrl = new URL(window.location.href);
+  currentUrl.pathname = "/create";
+  createProxyLink.href = currentUrl.toString();
+  }
   settingsModal = new bootstrap.Modal(document.getElementById("settingsModal"));
 
   const inputElement = document.getElementById("userInput");
@@ -1567,13 +1687,13 @@ document.addEventListener("DOMContentLoaded", (event) => {
   submitAs = submitAsElement ? submitAsElement.value : null;
   submitTo = submitButton ? submitButton.value : "Guest";
 
-  if (submitAs in proxies) {
+  if (submitAs in context.submitToOptions) {
     avatar = submitAs;
   } else {
     avatar = submitTo;
   }
 
-  hasPersonality = !proxies[submitTo].introduction ? false : true;
+  hasPersonality = !proxies[submitTo].meet ? false : true;
   hasDate = !proxies[submitTo].date ? false : true;
   hasInterview = !proxies[submitTo].debate ? false : true;
 
@@ -1586,7 +1706,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     doneTypingInterval = 2000;
   }
 
-  updateAvatar(avatar, "serious");
+  updateAvatar(Object.keys(proxies)[0], "friendly");
   const botResponse = document.getElementById("botResponse");
   botResponse.textContent = ``;
 
@@ -1605,12 +1725,13 @@ document.addEventListener("DOMContentLoaded", (event) => {
     .addEventListener("input", function () {
       const currentContent = document.getElementById("contentField").value;
       const saveButton = document.getElementById("save");
-      console.log("Current content:", currentContent);
-      console.log("Original content:", originalContent);
+      saveButton.classList.remove("btn-success");
       if (currentContent !== originalContent) {
         saveButton.disabled = false;
+        // saveButton.style.visibility = "visible";
       } else {
         saveButton.disabled = true;
+        // saveButton.style.visibility = "hidden";
       }
     });
 
@@ -1621,59 +1742,67 @@ document.addEventListener("DOMContentLoaded", (event) => {
   }
 
   // Custom Context
-  // const hostButtons = document.getElementById("hostButtons");
-  // hostButtons.addEventListener("change", function (e) {
-  //   const submitAsButton = document.getElementById("submitAs");
-  //   const submitToButtonGroup = document.getElementById("submitTo");
-  //   if (e.target.tagName === "INPUT" && e.target.type === "checkbox") {
-  //     const hostName = e.target.nextElementSibling.textContent;
-  //     const checkedBoxes = hostButtons.querySelectorAll(
-  //       'input[type="checkbox"]:checked'
-  //     );
-  //     if (!e.target.checked && checkedBoxes.length === 0) {
-  //       // Prevent unchecking if it's the last remaining checked checkbox
-  //       e.preventDefault();
-  //       // alert('At least one host must be selected.');
-  //       e.target.checked = true; // Ensure the checkbox stays checked
-  //       return;
-  //     }
+  const hostButtons = document.getElementById("hostButtons");
 
-  //     if (e.target.checked) {
-  //       // Host is checked, add to submit buttons
-  //       const optionAs = document.createElement("option");
-  //       optionAs.value = hostName;
-  //       optionAs.textContent = hostName;
-  //       submitAsButton.appendChild(optionAs);
-  //       optionAs.selected = true;
-  //       updateAvatar(hostName, "serious");
+  hostButtons.addEventListener("change", function (e) {
+    // const submitAsButton = document.getElementById("submitAs");
+    // const submitToButtonGroup = document.getElementById("submitTo");
+    // if (e.target.tagName === "INPUT" && e.target.type === "checkbox") {
+    //   const hostName = e.target.nextElementSibling.textContent;
+    //   const checkedBoxes = hostButtons.querySelectorAll(
+    //     'input[type="checkbox"]:checked'
+    //   );
+    //   // if (!e.target.checked && checkedBoxes.length === 0) {
+    //   //   // Prevent unchecking if it's the last remaining checked checkbox
+    //   //   e.preventDefault();
+    //   //   // alert('At least one host must be selected.');
+    //   //   e.target.checked = true; // Ensure the checkbox stays checked
+    //   //   return;
+    //   // }
 
-  //       getHosts();
-  //       const submitToButton = document.createElement("input");
-  //       submitToButton.setAttribute("type", "submit");
-  //       submitToButton.setAttribute("name", "go");
-  //       submitToButton.setAttribute("value", hostName);
-  //       submitToButton.setAttribute("class", "btn btn-outline-dark btn-sm");
-  //       if (hostName in proxies) {
-  //         submitToButtonGroup.appendChild(submitToButton);
-  //       }
-  //     } else {
-  //       // Host is unchecked, remove from submit buttons
-  //       const optionToRemoveAs = Array.from(submitAsButton.options).find(
-  //         (option) => option.value === hostName
-  //       );
-  //       if (optionToRemoveAs) {
-  //         submitAsButton.removeChild(optionToRemoveAs);
-  //       }
+    //   if (e.target.checked) {
+    //     // Host is checked, add to submit buttons
+    //     const optionAs = document.createElement("option");
+    //     optionAs.value = hostName;
+    //     optionAs.textContent = hostName;
+    //     submitAsButton.appendChild(optionAs);
+    //     optionAs.selected = true;
+    //     // addButton();
+    //     updateAvatar(hostName, "smile");
 
-  //       const submitToButtonToRemove = Array.from(
-  //         submitToButtonGroup.children
-  //       ).find((button) => button.value === hostName);
-  //       if (submitToButtonToRemove) {
-  //         submitToButtonGroup.removeChild(submitToButtonToRemove);
-  //       }
-  //     }
-  //   }
-  // });
+    //     getHosts();
+    //     const submitToButton = document.createElement("input");
+    //     submitToButton.setAttribute("type", "submit");
+    //     submitToButton.setAttribute("name", "go");
+    //     submitToButton.setAttribute("value", hostName);
+    //     submitToButton.setAttribute(
+    //       "class",
+    //       "btn btn-rounded btn-outline-dark btn-sm"
+    //     );
+    //     submitToButtonGroup.appendChild(submitToButton);
+    //   } else {
+    //     // Host is unchecked, remove from submit buttons
+    //     const optionToRemoveAs = Array.from(submitAsButton.options).find(
+    //       (option) => option.value === hostName
+    //     );
+    //     if (optionToRemoveAs) {
+    //       submitAsButton.removeChild(optionToRemoveAs);
+    //     }
+
+    //     const submitToButtonToRemove = Array.from(
+    //       submitToButtonGroup.children
+    //     ).find((button) => button.value === hostName);
+    //     if (submitToButtonToRemove) {
+    //       submitToButtonGroup.removeChild(submitToButtonToRemove);
+    //     }
+    //   }
+    // }
+    updateUrl(document.getElementById("contextSelect").value.toLowerCase());
+  });
+  const contentField = document.getElementById("contentField");
+if (contentField) {
+  contentField.addEventListener("input", toggleTraining);
+}
 
   // Parameters
   // ----------------------------
@@ -1712,6 +1841,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
   updateUrl(String(siteId));
   updateContent();
   processParameters();
+  toggleTraining();
 });
 
 window.onload = function () {};

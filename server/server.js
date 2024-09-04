@@ -86,7 +86,7 @@ const ELEVENLABS_ENDPOINTS = {
 // Variables
 let currentSpeaker = ""; // default speaker
 let voice = "";
-let transcriptThreshold = 750;
+let transcriptThreshold = 1000;
 let transcriptSummarized = false;
 
 // 2. ROUTES
@@ -112,15 +112,15 @@ app.get("/", async (req, res) => {
   let url = protocol + "://" + req.get("host") + req.originalUrl;
   // Check if the subdomain exists
   if (subdomain != "" && subdomain != "ego-proxy") {
-    fetchProxyData([subdomain], async (err, proxy) => {
-      if (err || !proxy || proxy.length === 0) {
-        console.error("Error fetching proxy data or no data found:", err);
+    fetchProxies([subdomain]).then((proxy) => {
+      if (!proxy || proxy.length === 0) {
+        console.error("No proxy data found");
         return res.render("create", {
           proxyDomain: proxyDomain,
           progress: progress,
         });
       }
-      res.redirect(url + "introduction");
+      res.redirect(url + "meet");
     });
   } else {
     res.render("create", { proxyDomain: proxyDomain, progress: progress });
@@ -162,8 +162,16 @@ app.get("/:siteId", async (req, res) => {
     console.log("No subdomain detected");
   }
 
+  // Extract and decode the guest parameter
+  const guests = req.query.guest
+    ? decodeURIComponent(req.query.guest).split(",")
+    : [];
+
+  // Log the guests array
+  // console.log("Guests:", guests);
+
   try {
-    const data = await fetchContextAndProxies(siteId, subdomain);
+    const data = await fetchContextAndProxies(siteId, subdomain, guests);
     if (!data) {
       console.log("No matching records found");
       return res.render("create"); // Handle no matching records case
@@ -176,10 +184,11 @@ app.get("/:siteId", async (req, res) => {
       result[key.toLowerCase()] = data.proxies[key];
       return result;
     }, {});
-
+    console.log("updateContextMessages..");
     updateContextMessages(siteId, subdomain, lowerCaseProxies, data);
-
+    console.log("updatedContextMessages..");
     cleanDataForPublic(data); // Prepare data for public use by removing sensitive info
+    console.log("rendering chat");
     res.render("chat", data); // Render template with cleaned data
   } catch (err) {
     console.error(err.message);
@@ -216,20 +225,38 @@ app.post("/update-proxy", async (req, res) => {
 
 // Chat Route
 app.post("/ask/", async (req, res) => {
-  const { question, submitTo, transcript, siteId, hosts, isTraining } = req.body;
+  const {
+    question,
+    submitAs,
+    submitTo,
+    transcript,
+    siteId,
+    hosts,
+    training,
+    tutorial,
+  } = req.body;
   if (!question || !submitTo || !transcript || !siteId) {
     return res.status(400).send({ error: "Missing required fields" });
   }
-
   const dataForSiteId = globalDataStore[siteId];
+
   if (!dataForSiteId) {
     return res.status(400).send({ error: "Data not found for siteId" });
   }
-  const userMessage = `Add a single line of dialogue to this script to advance the plot. Never add more than one line of dialogue. Include one of the following emotions in parentheses at the very end of your response: Smile, Frown, Anxious, Surprise, Skeptical, Serious, Laugh. Do not use any other expressions than the ones listed. Make sure your response reflects the emotion clearly. For example: I'm feeling great today! (Smile):\nCharacters: ${globalCast}\n`;
+  emotions = "Angry, Confused, Joy, Laugh, Sad, Fear, Disgust, Embarassed";
+  // Similar:
+  // Embarassed, Anger, Disgust
+  // Joy
+  const userMessage = `Add a single line of dialogue to this script to advance the plot. Never add more than one line of dialogue. Each line should express one of the following emotions: ${emotions}. Include the relevant emotions in parentheses at the very end of your response. For example:
+
+I'm feeling great today! (Joy):
+
+Do not use any other expressions than the ones listed and do not use any of these emotions twice in a row. \nCharacters: ${globalCast}\n`;
   const proxies = dataForSiteId.proxies;
   const context = dataForSiteId.context;
+  const profile = proxies[submitAs] ? proxies[submitAs][siteId] : "";
   currentSpeaker = submitTo;
-  console.log("Current speaker:", currentSpeaker);
+  previousSpeaker = submitAs;
   const currentProxy = proxies[currentSpeaker] || {};
   voice = ELEVENLABS_API_ENDPOINT;
 
@@ -237,7 +264,6 @@ app.post("/ask/", async (req, res) => {
     voice = ELEVENLABS_ENDPOINTS[currentSpeaker];
     console.log("Voice:", voice);
   } else if (ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity]) {
-    console.log("Gender speaker:", currentSpeaker);
     voice = ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity];
   } else {
     console.log("Generic speaker:", currentSpeaker);
@@ -246,18 +272,23 @@ app.post("/ask/", async (req, res) => {
 
   let parts = req.hostname.split(".");
   let subdomain = parts.length > 1 ? parts[0] : "";
-  console.log("Training:", isTraining);
   if (!dataForSiteId) {
     return res.status(400).send({ error: "Data not found for siteId" });
   }
   // Attempt to summarize the transcript if conditions are met
-
-  if (
-    transcript.length > transcriptThreshold && (proxies[currentSpeaker][siteId] === undefined || isTraining)
-  ) {
+  console.log("Transcript length:", transcript.length);
+  console.log("training:", training);
+  console.log("tutorial:", tutorial);
+  if (transcript.length > transcriptThreshold && (training || tutorial)) {
     try {
       console.log("Transcript summary conditions met. Summarizing...");
-      transcriptSummary = await summarizeTranscript(transcript, siteId);
+      console.log(proxies[currentSpeaker][siteId]);
+      transcriptSummary = await summarizeTranscript(
+        transcript,
+        siteId,
+        subdomain,
+        profile
+      );
       transcriptSummarized = true;
       console.log("Transcript summarized successfully: ", transcriptSummary);
 
@@ -287,19 +318,19 @@ app.post("/ask/", async (req, res) => {
       proxies[proxyData.Proxy].message = proxyData.message;
 
       const proxyMessage =
-        `${currentProxy.message} This character has just updated it's introduction.` ||
+        `${currentProxy.message} This character has just updated it's personality.` ||
         "Default speaker message";
 
-      context.message = `${proxyData.Proxy} has updated itself to use the following introduction: "${transcriptSummary}"\n ${proxyData.Proxy} will introduce themself, provide an overview of their personality and keep the conversation flowing with questions.`;
+      context.message = `${proxyData.Proxy} has updated itself to use the following personality: "${transcriptSummary}"\n ${proxyData.Proxy} will introduce themself, provide an overview of their personality and keep the conversation flowing with questions.\n`;
 
       const contextMessage = context.message;
 
-      const systemMessage = `${proxyMessage}\nScene: ${contextMessage}`;
+      const systemMessage = `${proxyMessage}\nScene: ${contextMessage}\n`;
 
       const freshUserMessage = `${userMessage}${context.message}`;
       // Process and send response
       const payload = createPayload(systemMessage, freshUserMessage);
-      // console.log("Payload:", payload);
+      console.log("Payload:", payload);
       console.log("Getting assistant response...");
       const assistantMessage = await getAssistantResponse(payload);
       // calculateAndLogCost(userMessage, assistantMessage);
@@ -316,31 +347,40 @@ app.post("/ask/", async (req, res) => {
       res.status(500).send({ error: "Failed to summarize transcript" });
     }
   } else {
-    // Handle training process
     const contextMessage =
       dataForSiteId.context.message || "Default general message";
     const proxyMessage = currentProxy.message || "";
     const proxyContext = proxies[currentSpeaker][siteId] || "";
-    // console.log("Proxy context:", proxyContext);
+
     const progress = Math.floor(
       (transcript.length / transcriptThreshold) * 100
     );
     const intelligence =
-      siteId === "introduction"
-        ? ` Your intelligence is developing with each response. Training is ` +
-          progress +
-          `% complete.\n`
-        : "";
-    const systemMessage = `${proxyMessage}${intelligence}${contextMessage}${proxyContext}`;
-    const payload = createPayload(systemMessage, userMessage + transcript);
-    // console.log("Payload:", payload);
+      siteId === "meet" ? ` Conversation is ` + progress + `% complete.\n` : "";
+    console.log("previousSpeaker:", previousSpeaker);
+    const previousProxy = proxies[previousSpeaker] || "";
+    // console.log("previousProxy:", previousProxy);
 
+    if (previousProxy[siteId]) {
+      previousProxyProfile =
+        " Here is the profile of the person you're speaking to: \n" +
+        previousProxy[siteId];
+    } else {
+      previousProxyProfile = "";
+    }
+
+    const systemMessage = `${proxyMessage}${contextMessage}`;
+
+    const payload = createPayload(
+      systemMessage + previousProxyProfile,
+      userMessage + transcript
+    );
+    // console.log(payload);
     const assistantMessage = await getAssistantResponse(payload);
     // calculateAndLogCost(userMessage, assistantMessage);
     res.send({ answer: assistantMessage });
   }
 });
-
 
 async function generateContent(transcript, context, systemContent) {
   const payload = {
@@ -371,19 +411,23 @@ async function generateContent(transcript, context, systemContent) {
   }
 }
 
-async function summarizeTranscript(transcript, context) {
-  if (context === "introduction") {
-    systemContent =
-    "Use the responses by 'you' in this transcript to create a character portrait in 100 words. Do not take everything at face value. Look for clues about unspoken traits like a psycho-analyst. Write the summary in the tone of Alan Watts. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves. Only include the prompt, do not include a line labelling it as a prompt.";}
-    else if (context === "interview") {
-    systemContent = "Use the responses in this transcript to generate a professional experience profile similar in format to a resume.";
+async function summarizeTranscript(transcript, context, user, profile) {
+  revise = profile
+    ? ` Incorporate details from their previous profile:
+  "${profile}".`
+    : "";
+  console.log("old Profile:", profile);
+  console.log("revise:", revise);
+  if (context === "meet") {
+    systemContent = `Use the responses by 'you' in this transcript to create a character portrait in 100 words. Include speech patterns. Do not take everything at face value. Look for clues about unspoken traits like a psycho-analyst. Write the summary in the tone of Alan Watts. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves. Only include the prompt, do not include a line labelling it as a prompt. ${revise}`;
+  } else if (context === "interview") {
+    systemContent = `Use the responses in this transcript to generate a concise summary of ${user}'s professional experience. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves during an interview. Do not use Markdown.${revise}`;
+  } else if (context === "dating") {
+    systemContent = `Use the responses in this transcript to generate a dating profile for ${user}. Do not use Markdown.${revise}`;
+  } else if (context === "debate") {
+    systemContent = `Use the responses in this transcript to create a profile of ${user}'s beliefs.  Do not use Markdown.${revise}`;
   }
-    else if (context === "dating") {
-    systemContent = "Use the responses in this transcript to generate a dating profile.";
-  }
-    else if (context === "debate") {
-    systemContent = "Use the responses in this transcript to create a profile of this user's beliefs.";
-  }
+  console.log("systemContent:", systemContent);
   return await generateContent(transcript, context, systemContent);
 }
 
@@ -448,37 +492,33 @@ app.post("/synthesize", apiLimiter, async (req, res) => {
   }
 });
 
-function updateContextMessages(siteId, subdomain, lowerCaseProxies, data) {
-  // Update the context message for the introduction site
-  if (
-    siteId === "introduction" &&
-    lowerCaseProxies[subdomain].introduction !== undefined
-  ) {
+function updateContextMessages(
+  siteId,
+  subdomain,
+  lowerCaseProxies,
+  data,
+  currentSpeaker
+) {
+  // Update the context message for the meet site if personality exists.
+  if (siteId === "meet" && lowerCaseProxies[subdomain].meet !== undefined) {
     globalDataStore[
       siteId
-    ].context.message = `Say hello and introduce yourself by your name ${lowerCaseProxies[subdomain].Proxy} and share a detailed overview of yourself. Ask questions to keep a conversation flowing.`;
+    ].context.message = `Say hello and introduce yourself by your name. Share a detailed overview of yourself. Ask questions to keep a conversation flowing.`;
   }
 
   // Update the context message for the interview site
-  if (
-    siteId == "interview" &&
-    lowerCaseProxies[subdomain].introduction !== undefined
-  ) {
+  if (siteId == "interview" && lowerCaseProxies[subdomain].meet !== undefined) {
     globalDataStore[
       siteId
     ].context.message = `You are interviewing ${lowerCaseProxies[subdomain].Proxy} for a job.`;
   }
 
   if (subdomain != "" && subdomain != "ego-proxy") {
-    data.introduction = lowerCaseProxies[subdomain].introduction === undefined;
+    data.meet = lowerCaseProxies[subdomain].meet === undefined;
     data.training = lowerCaseProxies[subdomain][siteId] === undefined;
-    console.log("training:", data.training);
   } else {
-    data.introduction = true;
+    data.meet = true;
     data.training = true;
-    console.log(
-      "Defaulting introduction and training to true due to no subdomain"
-    );
   }
 }
 
@@ -573,7 +613,7 @@ if (process.env.NODE_ENV === "development") {
 console.log("Model:", gptModel);
 
 // 3. FUNCTIONS
-
+// description prompt. Begin with an overall impression. Next include face shape, nose shape, eye color, complexion, hair color/style/length, facial hair, eyebrows, Lips, perceived age, build, and any other relevent details.
 async function describeImageBase(base64) {
   const apiEndpoint = "https://api.openai.com/v1/chat/completions";
   const response = await axios.post(
@@ -586,7 +626,7 @@ async function describeImageBase(base64) {
           content: [
             {
               type: "text",
-              text: "Describe this fictional face. Include face shape, nose shape, eye color, complexion, hair color/style/length, facial hair, eyebrows, Lips, perceived age, build, and any other relevent details. Do not mention facial expression if possible. Your response will be used to generate an image. If description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
+              text: "You are an author describing a character inspired by this picture. Describe the image as a children's cartoon to your illustrator. Do not mention facial expressions or background. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
             },
             {
               type: "image_url",
@@ -609,7 +649,7 @@ async function describeImageBase(base64) {
 }
 
 // Fetch context and proxies
-async function fetchContextAndProxies(siteId, subdomain) {
+async function fetchContextAndProxies(siteId, subdomain, guests) {
   try {
     console.log("Fetching context and proxies for siteId:", siteId);
     const airTableBase = await findBase(siteId);
@@ -617,6 +657,7 @@ async function fetchContextAndProxies(siteId, subdomain) {
       throw new Error("Site ID not found in any base");
     }
     console.log("Airtable base:", airTableBase);
+
     const records = await base(airTableBase)
       .select({
         filterByFormula: `{siteId} = '${siteId}'`,
@@ -627,50 +668,93 @@ async function fetchContextAndProxies(siteId, subdomain) {
     }
 
     const context = records[0].fields;
-
-    if (
-      !context.submitAsOptions.includes("You") &&
-      !context.submitAsOptions.includes("Interviewer")
-    ) {
-      context.submitAsOptions = updateOptionsWithSubdomain(
-        context.submitAsOptions,
-        subdomain
+    if (siteId !== ct) {
+      if (
+        !context.submitAsOptions.includes("You") &&
+        !context.submitAsOptions.includes("Interviewer")
+      ) {
+        context.submitAsOptions = updateOptionsWithSubdomain(
+          context.submitAsOptions,
+          subdomain,
+          guests
+        );
+        console.log("Updated submitAsOptions:", context.submitAsOptions);
+      }
+      context.submitToOptions = updateOptionsWithSubdomain(
+        context.submitToOptions,
+        subdomain,
+        guests
       );
-      console.log("Updated submitAsOptions:", context.submitAsOptions);
     }
-    context.submitToOptions = updateOptionsWithSubdomain(
-      context.submitToOptions,
-      subdomain
-    );
     console.log("Updated submitToOptions:", context.submitToOptions);
 
-    const proxies = await fetchProxies(context.submitToOptions);
-    const submitAsProxies = await fetchProxies(context.submitAsOptions);
-    const publicProxies = await fetchPublicProxies();
+    // console.log("Updated submitToOptions:", context.submitToOptions);
+    const publicProxyNames = await fetchPublicProxyNames(subdomain);
+    const yourProxyNames = await fetchYourProxyNames(subdomain);
 
+    const proxyList = [
+      ...new Set([
+        ...context.submitToOptions,
+        ...context.submitAsOptions,
+        ...guests,
+      ]),
+    ];
+    console.log("Proxy list:", proxyList);
+    const proxies = await fetchProxies(proxyList);
+    // const submitAsProxies = await fetchProxies(context.submitAsOptions);
+    // const guestProxies = await fetchProxies(guests);
+
+    context.submitToOptions = [
+      ...new Set([...context.submitToOptions, ...guests]),
+    ];
+
+    context.submitAsOptions = [
+      ...new Set([...context.submitAsOptions, ...guests]),
+    ];
+    // console.log("Public proxies:", publicProxies);
+
+    // console.log("All proxies:", allProxies);
     const data = {
       context: context,
       proxies: proxies.reduce((acc, proxy) => {
         acc[proxy.fields.Proxy] = proxy.fields;
         return acc;
       }, {}),
-      submitAsProxies: submitAsProxies.reduce((acc, proxy) => {
-        acc[proxy.fields.Proxy] = proxy.fields;
+      // submitAsProxies: submitAsProxies.reduce((acc, proxy) => {
+      //   acc[proxy.fields.Proxy] = proxy.fields;
+      //   return acc;
+      // }, {}),
+      publicProxies: publicProxyNames.reduce((acc, proxy) => {
+        acc.push(proxy);
         return acc;
-      }, {}),
+      }, []),
+      yourProxies: yourProxyNames.reduce((acc, proxy) => {
+        acc.push(proxy);
+        return acc;
+      }, []),
     };
 
-    context.submitToOptions = proxies.map((proxy) => proxy.fields.Proxy);
-    context.submitAsOptions = submitAsProxies.map(
-      (proxy) => proxy.fields.Proxy
-    );
+    context.submitToOptions = context.submitToOptions.map((option) => {
+      return (
+        proxies.find(
+          (proxy) => proxy.fields.Proxy.toLowerCase() === option.toLowerCase()
+        )?.fields.Proxy || option
+      );
+    });
+
+    context.submitAsOptions = context.submitAsOptions.map((option) => {
+      return (
+        proxies.find(
+          (proxy) => proxy.fields.Proxy.toLowerCase() === option.toLowerCase()
+        )?.fields.Proxy || option
+      );
+    });
 
     globalDataStore[siteId] = JSON.parse(JSON.stringify(data));
 
     globalCast = [
       ...new Set([...context.submitToOptions, ...context.submitAsOptions]),
     ].join(", ");
-
     return data; // Return the data along with any global updates
   } catch (err) {
     throw new Error("Error fetching context and proxies: " + err.message);
@@ -678,7 +762,7 @@ async function fetchContextAndProxies(siteId, subdomain) {
 }
 
 // Proxies to be shared with the public
-function fetchPublicProxies() {
+function fetchPublicProxyNames(subdomain) {
   return new Promise((resolve, reject) => {
     base("Proxies")
       .select({
@@ -688,36 +772,55 @@ function fetchPublicProxies() {
         if (err) {
           reject(err); // Handle errors
         } else {
-          const proxies = publicProxies.map((proxy) => ({
-            proxy: proxy.fields.Proxy,
-            serious: proxy.fields.serious,
-          }));
-          resolve(proxies); // Resolve with the proxies
+          const publicProxyNames = publicProxies
+            .map((proxy) => proxy.fields.Proxy)
+            .filter(
+              (proxyName) => proxyName.toLowerCase() !== subdomain.toLowerCase()
+            );
+          resolve(publicProxyNames); // Resolve with the filtered names of public proxies
         }
       });
   });
 }
 
-// Fetch all data  main proxy to render profile.
-function fetchProxyData(subdomain, callback) {
-  // Constructing the formula based on conditions
-  const formula = subdomain
-    .map((condition) => `LOWER({Proxy}) = LOWER('${condition}')`)
-    .join(", ");
+// Function to fetch proxy names associated with the same email as the given siteId
+function fetchYourProxyNames(subdomain) {
+  return new Promise((resolve, reject) => {
+    // First, find the email associated with the given siteId
+    base("Proxies")
+      .select({
+        filterByFormula: `{siteId} = '${subdomain}'`,
+        maxRecords: 1,
+      })
+      .firstPage((err, records) => {
+        if (err) {
+          return reject(err); // Handle errors
+        }
+        if (records.length === 0) {
+          return resolve([]); // No records found
+        }
 
-  base("Proxies")
-    .select({
-      filterByFormula: `OR(${formula})`,
-    })
-    .firstPage((err, records) => {
-      if (err) {
-        callback(err, null);
-        return;
-      }
-      // Process and return the first record data
-      const proxy = records[0]?.fields;
-      callback(null, proxy);
-    });
+        const email = records[0].fields.email; // Assuming the email field is named 'Email'
+
+        // Now, find all proxies associated with this email
+        base("Proxies")
+          .select({
+            filterByFormula: `{email} = '${email}'`,
+          })
+          .all((err, proxies) => {
+            if (err) {
+              return reject(err); // Handle errors
+            }
+            const proxyNames = proxies
+              .map((proxy) => proxy.fields.Proxy)
+              .filter(
+                (proxyName) =>
+                  proxyName.toLowerCase() !== subdomain.toLowerCase()
+              );
+            resolve(proxyNames); // Resolve with the filtered names of proxies
+          });
+      });
+  });
 }
 
 // REDUNDAT - Fetch single proxy data by name.
@@ -787,15 +890,12 @@ function fetchProxies(submitOptions) {
 }
 
 // Add subdomain as submit option
-function updateOptionsWithSubdomain(options = [], subdomain) {
+function updateOptionsWithSubdomain(options = [], subdomain, guests = []) {
   // Ensure options is always an array
   if (!Array.isArray(options)) {
     options = [options]; // Convert to array if it's not
   }
-  if (options.length > 0) {
-    return [subdomain, ...options];
-  }
-  return [subdomain];
+  return [subdomain, ...options, ...guests];
 }
 
 // Find context base
@@ -865,8 +965,6 @@ async function getAssistantResponse(payload) {
   }
 }
 
-
-
 function checkNameExists(name) {
   return new Promise((resolve, reject) => {
     base("Proxies")
@@ -892,13 +990,18 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
   // Other possible styles: low poly, Material Design, Polygonal
   // let style = `flat, minimalistic, low poly depiction, abstract, poorly drawn`;
   // The depiction should focus on basic shapes and flat colors. The goal is to create a simple, abstract representation of the subject.
-  let style = `abstract low poly avatar`;
-  let styleDetails =
-    "The depiction should focus on basic shapes and flat colors. The goal is to create a simple, abstract representation of the subject's emotion. The face should be directed straight forward and have a pure white background.";
+
   // Exclude any additional elements like color palettes or reference shades.
-  let avatarDescription = `Generate a ${style} for a ${genderIdentity} of ${ethnicity} descent using this description:
-    ${photoDescription}
-    ${styleDetails}`;
+  let avatarDescription = `Appearance:
+  ${photoDescription}
+
+  Style Details: Capture the essence of this cartoon using a Low-Poly style with geometric shapes and flat colors emphasizing a clear, recognizable likeness without detailed textures.
+
+  Important:
+  - The eyes must be directed straight forward.
+  - The background must be pure white.
+  - The emotion of the image must be cartoonishly exaggerated and extreme.`;
+  console.log("Avatar Description:", avatarDescription);
 
   domain = req.get("host");
 
@@ -909,28 +1012,27 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     throw new Error("Name is already in use");
   }
 
-  // Emotions
   let emotions = {
-    initialUrl: "",
-    initialPrompt: "",
-    surpriseUrl: "",
-    surprisePrompt: "",
-    thinkUrl: "",
-    thinkPrompt: "",
-    listenUrl: "",
-    listenPrompt: "",
+    angryUrl: "",
+    angryPrompt: "",
+    friendlyUrl: "", // Updated 'think' to 'friendly'
+    friendlyPrompt: "",
+    confusedUrl: "", // Updated 'listen' to 'confused'
+    confusedPrompt: "",
     speakUrl: "",
     speakPrompt: "",
-    laughUrl: "",
-    laughPrompt: "",
-    smileUrl: "",
-    smilePrompt: "",
-    skepticalUrl: "",
-    skepticalPrompt: "",
-    frownUrl: "",
-    frownPrompt: "",
-    anxiousUrl: "",
-    anxiousPrompt: "",
+    joyUrl: "", // Updated 'joy' to 'joy'
+    joyPrompt: "",
+    sadUrl: "", // Updated 'smile' to 'sad'
+    sadPrompt: "",
+    sadnessUrl: "",
+    sadnessPrompt: "",
+    fearUrl: "",
+    fearPrompt: "",
+    disgustUrl: "",
+    disgustPrompt: "",
+    embarassedUrl: "", // Added 'embarassed'
+    embarassedPrompt: "",
   };
 
   const calculateProgress = () => {
@@ -967,109 +1069,89 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
 
   try {
     apiEndpoint = "https://api.openai.com/v1/images/generations";
-    // let initialImageResponse = await axios
-    //   .post(
-    //     apiEndpoint,
-    //     {
-    //       model: "dall-e-3",
-    //       // style: natural,
-    //       prompt: `${avatarDescription}`,
-    //       n: 1,
-    //       size: "1024x1024",
-    //     },
-    //     { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
-    //   )
-    //   .catch((err) => {
-    //     console.error("Error with initial axios post:", err);
-    //     throw err;
-    //   });
-    // emotions.initialUrl = initialImageResponse.data.data[0].url;
-    // const revised_prompt = initialImageResponse.data.data[0].revised_prompt;
-    // let laughDescription = `Features a wide, open-mouth smile showing teeth, with eyes squinted and crow's feet at the corners. Eyebrows are relaxed. Cheeks are raised, and the face appears vibrant and animated, often with a slight head tilt back if the laughter is hearty.`;
     sendProgress(ws);
     console.log("Beginning emotion generation...");
 
-    let listenDescription = `Eyebrows raised very high and arched, eyes wide and intensely focused forward with pupils dilated. Head tilted forward, neck extended, with one hand thoughtfully posed on the chin creating an expression of keen engagement and alert attentiveness.`;
+    let emotionInstructions = `Render an ${ethnicity} ${genderIdentity} staring straight ahead against a pure white background in an extreme state of`;
 
-    let speakDescription = `Mouth wide open in a large oval, as if caught mid-sentence, with the tongue visible inside. Eyebrows arched high, emphasizing vigorous participation. Eyes are wide and focused directly ahead, with a slight glimmer of enthusiasm. Facial muscles are animated, cheeks raised, creating a lively and expressive look.`;
+    let speakDescription = `${emotionInstructions} SPEAKING!`;
 
-    let thinkDescription = `Face showing exaggerated concentration with eyebrows deeply furrowed and eyes turned sharply to the side. One hand scratching a comically oversized head, fingers splayed. Mouth downturned in a pronounced scowl, lower lip protruding, portraying intense contemplation and bewilderment.`;
+    let friendlyDescription = `${emotionInstructions} FRIENDLINESS!`;
 
-    let laughDescription = `Oversized, beaming smile stretching ear-to-ear, showing all teeth, including the molars. Eyes squeezed into thin lines with pronounced crinkles at the corners, creating crow's feet. Eyebrows arched high and curved, forehead smooth, creating a radiantly open and joyful expression. Cheeks are pushed up, adding to the cheerful demeanor.`;
+    let confusedDescription = `${emotionInstructions} CONFUSION AND DEEP THOUGHT!`;
 
-    let smileDescription = `A gentle, closed-lip smile with the corners of the mouth upturned. Eyes softly crinkled at the outer edges, with a relaxed and serene gaze. Eyebrows in a natural, raised position, conveying a friendly and pleasant expression. Cheeks have a lift, adding warmth to the face.`;
+    let joyDescription = `${emotionInstructions} LAUGHTER!`;
 
-    let frownDescription = `Deep frown with heavily furrowed and converging eyebrows, creating deep lines between them. Eyelids drooping significantly, tear filled eyes looking downward. Mouth turned down in a pronounced arc, with the corners pulled down sharply, creating an exaggerated and unmistakable expression of sadness. The chin is wrinkled, adding to the sorrowful look.`;
+    let sadDescription = `${emotionInstructions} DESPAIR!`;
 
-    let surpriseDescription = `Eyebrows raised to the hairline, eyes bulging like saucers with pupils dilated. Mouth open wide in an exaggerated O-shape. Face captures extreme shock, with a large sweat droplet on the forehead and flushed cheeks, highlighting intense surprise.`;
+    let disgustedDescription = `${emotionInstructions} DISGUST!`;
 
-    let anxiousDescription = `Face etched with overt anxiety, with eyebrows raised. Bulging eyes staring to the side, rimmed by heavy bags and bloodshot. Forehead dripping with sweat. Cheeks red with embarassment. Lips pinched tightly or turned down dramatically, showing tension. Jaw clenched with visible muscle strain, neck tense, illustrating exaggerated stress and alertness.`;
+    let angryDescription = `${emotionInstructions} ANGER!`;
 
-    let skepticalDescription = `One eyebrow arched higher than the other, creating an asymmetrical look. Eyes narrowed with a pronounced side glance, showing suspicion. A smirk bordering on a grimace, with one corner of the mouth raised higher than the other. Cheeks are drawn in, creating subtle lines on the face, conveying skepticism and questioning credibility with a distinctively expressive flair.`;
+    let afraidDescription = `${emotionInstructions} FEAR!`;
 
+    let embarassedDescription = `${emotionInstructions} EMBARASSMENT!`;
+
+    // Prompt Array for Each Emotion
     let subsequentPrompts = [
-      `${avatarDescription}`,
-      `${avatarDescription}
-      The subject is surprised. Emphasize this in their facial expression: ${surpriseDescription}`,
-      `${avatarDescription}
-      The subject is confused. Emphasize this in their facial expression:: ${thinkDescription}`,
-      `${avatarDescription}
-      The subject is listeningin intently. Emphasize this in their facial: ${listenDescription}`,
-      `${avatarDescription}
-      The subject is speaking. Emphasize this in their facial expression: ${speakDescription}`,
-      `${avatarDescription}
-      The subject is gleeful. Emphasize this in their facial expression: ${laughDescription}`,
-      `${avatarDescription}
-      The subject is gleeful. Emphasize this in their facial expression: ${smileDescription}`,
-      `${avatarDescription}
-      The subject is sad. Emphasize this in their facial expression: ${frownDescription}`,
-      `${avatarDescription}
-      The subject is anxious. Emphasize this in their facial expression: ${anxiousDescription}`,
-      `${avatarDescription}
-      The subject is skeptical. Emphasize this in their facial expression: ${skepticalDescription}`,
+      `${speakDescription}
+      ${avatarDescription}`,
+      `${friendlyDescription}
+      ${avatarDescription}`,
+      `${confusedDescription}
+      ${avatarDescription}`,
+      `${joyDescription}
+      ${avatarDescription}`,
+      `${sadDescription}
+      ${avatarDescription}`,
+      `${disgustedDescription}
+      ${avatarDescription}`,
+      `${angryDescription}
+      ${avatarDescription}`,
+      `${afraidDescription}
+      ${avatarDescription}`,
+      `${embarassedDescription}
+      ${avatarDescription}`,
     ];
 
+    // Response Processing for Emotions
     const processResponse = (response, index) => {
       switch (index) {
         case 0:
-          emotions.initialUrl = response.data.data[0].url;
-          emotions.initialPrompt = response.data.data[0].revised_prompt;
-          break;
-        case 1:
-          emotions.surpriseUrl = response.data.data[0].url;
-          emotions.surprisePrompt = response.data.data[0].revised_prompt;
-          break;
-        case 2:
-          emotions.thinkUrl = response.data.data[0].url;
-          emotions.thinkPrompt = response.data.data[0].revised_prompt;
-          break;
-        case 3:
-          emotions.listenUrl = response.data.data[0].url;
-          emotions.listenPrompt = response.data.data[0].revised_prompt;
-          break;
-        case 4:
           emotions.speakUrl = response.data.data[0].url;
           emotions.speakPrompt = response.data.data[0].revised_prompt;
           break;
+        case 1:
+          emotions.friendlyUrl = response.data.data[0].url; // Updated to 'friendly'
+          emotions.friendlyPrompt = response.data.data[0].revised_prompt;
+          break;
+        case 2:
+          emotions.confusedUrl = response.data.data[0].url; // Updated to 'confused'
+          emotions.confusedPrompt = response.data.data[0].revised_prompt;
+          break;
+        case 3:
+          emotions.joyUrl = response.data.data[0].url;
+          emotions.joyPrompt = response.data.data[0].revised_prompt;
+          break;
+        case 4:
+          emotions.sadUrl = response.data.data[0].url; // Updated to 'sad'
+          emotions.sadPrompt = response.data.data[0].revised_prompt;
+          break;
         case 5:
-          emotions.laughUrl = response.data.data[0].url;
-          emotions.laughPrompt = response.data.data[0].revised_prompt;
+          emotions.disgustUrl = response.data.data[0].url;
+          emotions.disgustPrompt = response.data.data[0].revised_prompt;
           break;
         case 6:
-          emotions.smileUrl = response.data.data[0].url;
-          emotions.smilePrompt = response.data.data[0].revised_prompt;
+          emotions.angryUrl = response.data.data[0].url;
+          emotions.angryPrompt = response.data.data[0].revised_prompt;
           break;
         case 7:
-          emotions.frownUrl = response.data.data[0].url;
-          emotions.frownPrompt = response.data.data[0].revised_prompt;
+          emotions.fearUrl = response.data.data[0].url;
+          emotions.fearPrompt = response.data.data[0].revised_prompt;
           break;
         case 8:
-          emotions.anxiousUrl = response.data.data[0].url;
-          emotions.anxiousPrompt = response.data.data[0].revised_prompt;
-          break;
-        case 9:
-          emotions.skepticalUrl = response.data.data[0].url;
-          emotions.skepticalPrompt = response.data.data[0].revised_prompt;
+          emotions.embarassedUrl = response.data.data[0].url;
+          emotions.embarassedPrompt = response.data.data[0].revised_prompt;
           break;
         default:
           console.warn(`No case for index ${index}`);
@@ -1107,29 +1189,16 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     base("Proxies")
       .create({
         Proxy: proxyName,
-        avatarDescription: avatarDescription,
         genderIdentity: genderIdentity,
-        subsequentPrompt: subsequentPrompts.join("\n"),
-        serious: [{ url: emotions.initialUrl }],
-        seriousDescription: emotions.initialPrompt,
-        surprise: [{ url: emotions.surpriseUrl }],
-        surpriseDescription: emotions.surprisePrompt,
-        think: [{ url: emotions.thinkUrl }],
-        thinkDescription: emotions.thinkPrompt,
-        listen: [{ url: emotions.listenUrl }],
-        listenDescription: emotions.listenPrompt,
         speak: [{ url: emotions.speakUrl }],
-        speakDescription: emotions.speakPrompt,
-        laugh: [{ url: emotions.laughUrl }],
-        laughDescription: emotions.laughPrompt,
-        smile: [{ url: emotions.smileUrl }],
-        smileDescription: emotions.smilePrompt,
-        frown: [{ url: emotions.frownUrl }],
-        frownDescription: emotions.frownPrompt,
-        anxious: [{ url: emotions.anxiousUrl }],
-        anxiousDescription: emotions.anxiousPrompt,
-        skeptical: [{ url: emotions.skepticalUrl }],
-        skepticalDescription: emotions.skepticalPrompt,
+        friendly: [{ url: emotions.friendlyUrl }],
+        confused: [{ url: emotions.confusedUrl }],
+        joy: [{ url: emotions.joyUrl }],
+        sad: [{ url: emotions.sadUrl }],
+        disgust: [{ url: emotions.disgustUrl }],
+        fear: [{ url: emotions.fearUrl }],
+        angry: [{ url: emotions.angryUrl }],
+        embarassed: [{ url: emotions.embarassedUrl }],
         imagePrefix: "img/Guest/",
         email: proxyEmail,
       })
@@ -1149,49 +1218,67 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     throw new Error("Error updating Airtable"); // Rethrow or create a new error
   }
 
-  async function sendMail(emotions) {
-    try {
-      // const seriousUrl = await getSeriousUrl(proxyName);
-      const mailOptions = {
-        from: `"Ego-Proxy" <${email}>`,
-        to: `${proxyEmail}`, // List of recipients
-        subject: "Proxy Created: " + proxyName,
-        html: `
-        <p>Meet your proxy:</p>
-        <p>Name: ${proxyName}</p>
-        <p>
-          <a href='https://${proxyName}.${domain}/introduction'>
-            <img src="cid:image@cid" style="max-width: 300px;" alt="Proxy Image" />
-          </a>
-        </p>
-        <p><a href='https://${proxyName}.${domain}/introduction'>Click here</a> to train your proxy to emulate your introduction.
-        </p>
-        <p>Once trained, you can access it's profile <a href='https://${proxyName}.${domain}'>here</a>.
-        </p>
-      `,
+  async function sendMail(emotions, proxyEmail, proxyName, domain) {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log("Sending email...");
 
-        attachments: [
-          {
-            filename: "image.jpg",
-            path: emotions.initialUrl,
-            cid: "image@cid", //same cid value as in the html img src
-          },
-        ],
-      };
+        const mailOptions = {
+          from: `"Ego-Proxy" <${email}>`,
+          to: `${proxyEmail}`, // List of recipients
+          subject: "Proxy Created: " + proxyName,
+          html: `
+            <p>Meet your proxy:</p>
+            <p>Name: ${proxyName}</p>
+            <p>
+              <a href='https://${proxyName}.${domain}/meet'>
+                <img src="cid:image@cid" style="max-width: 300px;" alt="Proxy Image" />
+              </a>
+            </p>
+            <p><a href='https://${proxyName}.${domain}/meet'>Click here</a> to train your proxy to emulate you.
+            </p>
+            <p>Once trained, you can access its profile <a href='https://${proxyName}.${domain}'>here</a>.
+            </p>
+          `,
+          attachments: [
+            {
+              filename: "image.jpg",
+              path: emotions.joyUrl,
+              cid: "image@cid", //same cid value as in the html img src
+            },
+          ],
+        };
 
-      transporter.sendMail(mailOptions, function (error, info) {
-        if (error) {
-          console.log(error);
-          res.status(500).json({ message: "Error sending email" });
-        } else {
-          console.log("Email sent: " + info.response);
-          res.status(200).json({ message: "Proxy Created" });
-        }
-      });
-    } catch (error) {
-      console.log(error);
-      res.status(500).json({ message: "Error fetching URL" });
-    }
+        transporter.sendMail(mailOptions, function (error, info) {
+          if (error) {
+            console.error("Error sending email:", error);
+            reject(new Error("Error sending email: " + error.message));
+          } else {
+            console.log("Email sent: " + info.response);
+            resolve("Proxy Created");
+          }
+        });
+      } catch (error) {
+        console.error("Error in sendMail function:", error);
+        reject(new Error("Error in sendMail function: " + error.message));
+      }
+    });
   }
-  sendMail(emotions);
+
+  // Updated route handler function
+  function handleSendMail(req, res) {
+    const emotions = req.body.emotions; // Assuming emotions are passed in the request body
+    const { proxyEmail, proxyName, domain } = req.body; // Add any other necessary fields
+
+    sendMail(emotions, proxyEmail, proxyName, domain)
+      .then((message) => {
+        res.status(200).json({ message });
+      })
+      .catch((error) => {
+        res.status(500).json({ message: error.message });
+      });
+  }
+
+  // Route to send mail
+  app.post("/send-mail", handleSendMail);
 }

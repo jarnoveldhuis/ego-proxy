@@ -244,9 +244,7 @@ textarea {
 } */
 
 
-.btn-rounded {
-  border-radius: 30rem !important; /* Large radius to ensure fully rounded edges */
-}
+
 
 
 
@@ -544,6 +542,18 @@ h1 {
   font-size: 8vw;
 }
 
+/* Align the label and save button in a row, with the button on the right */
+.d-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Add margin to separate the elements */
+.mb-2 {
+  margin-bottom: 0.5rem;
+}
+
 /* .loading {
   margin: 20px;
   font-size: 36px;
@@ -633,6 +643,13 @@ h1 {
   width: auto;
   vertical-align: top;
 } */
+#contextUpdated {
+  position: fixed;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1050; /* Ensure it's above other elements */
+}
 
 .toggle-button {
   /* position: fixed;
