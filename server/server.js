@@ -184,9 +184,8 @@ app.get("/:siteId", async (req, res) => {
       result[key.toLowerCase()] = data.proxies[key];
       return result;
     }, {});
-    console.log("updateContextMessages..");
     updateContextMessages(siteId, subdomain, lowerCaseProxies, data);
-    console.log("updatedContextMessages..");
+    console.log("updatedContextMessages...");
     cleanDataForPublic(data); // Prepare data for public use by removing sensitive info
     console.log("rendering chat");
     res.render("chat", data); // Render template with cleaned data
@@ -277,12 +276,9 @@ Do not use any other expressions than the ones listed and do not use any of thes
   }
   // Attempt to summarize the transcript if conditions are met
   console.log("Transcript length:", transcript.length);
-  console.log("training:", training);
-  console.log("tutorial:", tutorial);
   if (transcript.length > transcriptThreshold && (training || tutorial)) {
     try {
       console.log("Transcript summary conditions met. Summarizing...");
-      console.log(proxies[currentSpeaker][siteId]);
       transcriptSummary = await summarizeTranscript(
         transcript,
         siteId,
@@ -357,9 +353,7 @@ Do not use any other expressions than the ones listed and do not use any of thes
     );
     const intelligence =
       siteId === "meet" ? ` Conversation is ` + progress + `% complete.\n` : "";
-    console.log("previousSpeaker:", previousSpeaker);
     const previousProxy = proxies[previousSpeaker] || "";
-    // console.log("previousProxy:", previousProxy);
 
     if (previousProxy[siteId]) {
       previousProxyProfile =
@@ -375,9 +369,7 @@ Do not use any other expressions than the ones listed and do not use any of thes
       systemMessage + previousProxyProfile,
       userMessage + transcript
     );
-    // console.log(payload);
     const assistantMessage = await getAssistantResponse(payload);
-    // calculateAndLogCost(userMessage, assistantMessage);
     res.send({ answer: assistantMessage });
   }
 });
@@ -416,8 +408,6 @@ async function summarizeTranscript(transcript, context, user, profile) {
     ? ` Incorporate details from their previous profile:
   "${profile}".`
     : "";
-  console.log("old Profile:", profile);
-  console.log("revise:", revise);
   if (context === "meet") {
     systemContent = `Use the responses by 'you' in this transcript to create a character portrait in 100 words. Include speech patterns. Do not take everything at face value. Look for clues about unspoken traits like a psycho-analyst. Write the summary in the tone of Alan Watts. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves. Only include the prompt, do not include a line labelling it as a prompt. ${revise}`;
   } else if (context === "interview") {
@@ -678,7 +668,6 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
           subdomain,
           guests
         );
-        console.log("Updated submitAsOptions:", context.submitAsOptions);
       }
       context.submitToOptions = updateOptionsWithSubdomain(
         context.submitToOptions,
@@ -686,7 +675,6 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
         guests
       );
     }
-    console.log("Updated submitToOptions:", context.submitToOptions);
 
     // console.log("Updated submitToOptions:", context.submitToOptions);
     const publicProxyNames = await fetchPublicProxyNames(subdomain);
@@ -699,7 +687,6 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
         ...guests,
       ]),
     ];
-    console.log("Proxy list:", proxyList);
     const proxies = await fetchProxies(proxyList);
     // const submitAsProxies = await fetchProxies(context.submitAsOptions);
     // const guestProxies = await fetchProxies(guests);
@@ -711,9 +698,7 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
     context.submitAsOptions = [
       ...new Set([...context.submitAsOptions, ...guests]),
     ];
-    // console.log("Public proxies:", publicProxies);
-
-    // console.log("All proxies:", allProxies);
+  
     const data = {
       context: context,
       proxies: proxies.reduce((acc, proxy) => {
@@ -1046,9 +1031,9 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     if (filledEmotions > 1) {
       console.log(
         "Images Generated",
-        Math.floor(filledEmotions) / 2,
+        Math.floor(filledEmotions),
         "of",
-        Math.floor(totalLength) / 2,
+        Math.floor(totalLength),
         "filled."
       );
     }

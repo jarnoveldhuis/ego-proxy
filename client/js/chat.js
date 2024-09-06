@@ -71,10 +71,6 @@ function preloadImages(proxies) {
         if (url && typeof url === "string") {
           let img = new Image();
           img.src = url;
-          img.onload = () => {
-            // Image loaded successfully
-            console.log("Image loaded:", url);
-          };
           img.onerror = (error) => {
             // Failed to load image
             console.error("Error loading image:", error);
@@ -105,7 +101,6 @@ function updateAvatar(submit, reaction) {
     }
 
     if (!typeof proxy["laugh"]) {
-      console.log("type of proxy[joy]", proxy["joy"]);
       reaction = "joy";
     }
     let imagePath = proxy[reaction][0].url;
@@ -582,9 +577,12 @@ async function askBot(event) {
       settingsModal.show();
       document.getElementById("contentField").value = data.transcriptSummary;
       document.getElementById("toggleButton").style.display = "inline-block";
-      const contextUpdatedAlert = document.getElementById("contextUpdated");
-      contextUpdatedAlert.classList.add("show");
-  
+
+      setTimeout(() => {
+        const contextUpdatedAlert = document.getElementById("contextUpdated");
+        contextUpdatedAlert.classList.add("show");
+      }, 1000);
+
       proxies[Object.keys(proxies)[0]].meet = data.transcriptSummary;
       toggleTraining();
     }
@@ -1051,8 +1049,6 @@ function toggleTraining() {
   }
 }
 
-
-
 function backToProfile() {
   // Remove active and show classes from the current active tab and content
   training = false;
@@ -1129,7 +1125,7 @@ function processParameters(url) {
   updateUrl(document.getElementById("contextSelect").value.toLowerCase());
   var context = document.getElementById("contextSelect").value;
 
-  var modalElement = document.getElementById("settingsModal");
+  var modalElement = document.getElementById("settingsModal") || "";
   var settingsModal =
     bootstrap.Modal.getInstance(modalElement) ||
     new bootstrap.Modal(modalElement);
@@ -1214,7 +1210,7 @@ function processParameters(url) {
 
     case "Date":
       trainScript =
-        "You are on a date.. Introduce yourself and try to get to know what they are looking for in a partner.";
+        "You are on a date. Introduce yourself and try to get to know what they are looking for in a partner.";
 
       transcriptText =
         "You are on a date with " +
@@ -1374,7 +1370,6 @@ function updateUrl(context) {
       regularUrl = url;
     }
     if (shareUrl) {
-      console.log("Share URL:", shareUrl);
     }
     shareUrl = url + "?" + queryString + "&share";
     trainingUrl = url + "?training=true&" + queryString;
@@ -1670,14 +1665,16 @@ document.addEventListener("DOMContentLoaded", (event) => {
   promptElement = document.getElementById("prompt");
 
   if (context.alias !== "CT") {
-  // Link to create page
-  const createProxyLink = document.getElementById("createProxyLink");
-  const currentUrl = new URL(window.location.href);
-  currentUrl.pathname = "/create";
-  createProxyLink.href = currentUrl.toString();
-  }
-  settingsModal = new bootstrap.Modal(document.getElementById("settingsModal"));
+    // Link to create page
+    const createProxyLink = document.getElementById("createProxyLink");
+    const currentUrl = new URL(window.location.href);
+    currentUrl.pathname = "/create";
+    createProxyLink.href = currentUrl.toString();
 
+    settingsModal = new bootstrap.Modal(
+      document.getElementById("settingsModal")
+    );
+  }
   const inputElement = document.getElementById("userInput");
   const imageElement = document.getElementById("botImage");
   inputElement.addEventListener("focus", function () {
@@ -1714,134 +1711,136 @@ document.addEventListener("DOMContentLoaded", (event) => {
   const now = new Date();
   now.setFullYear(now.getFullYear() - 4); // Subtract four years
 
-  // Run on select change
-  document
-    .getElementById("contextSelect")
-    .addEventListener("change", updateContent);
+  if (context.alias !== "CT") {
+    // Run on select change
+    document
+      .getElementById("contextSelect")
+      .addEventListener("change", updateContent);
 
-  // Enable save button on input if contentField is different from original content
-  document
-    .getElementById("contentField")
-    .addEventListener("input", function () {
-      const currentContent = document.getElementById("contentField").value;
-      const saveButton = document.getElementById("save");
-      saveButton.classList.remove("btn-success");
-      if (currentContent !== originalContent) {
-        saveButton.disabled = false;
-        // saveButton.style.visibility = "visible";
-      } else {
-        saveButton.disabled = true;
-        // saveButton.style.visibility = "hidden";
-      }
+    // Enable save button on input if contentField is different from original content
+    document
+      .getElementById("contentField")
+      .addEventListener("input", function () {
+        const currentContent = document.getElementById("contentField").value;
+        const saveButton = document.getElementById("save");
+        saveButton.classList.remove("btn-success");
+        if (currentContent !== originalContent) {
+          saveButton.disabled = false;
+          // saveButton.style.visibility = "visible";
+        } else {
+          saveButton.disabled = true;
+          // saveButton.style.visibility = "hidden";
+        }
+      });
+
+    if (window.location.href.includes("voice=true")) {
+      console.log("Voice is enabled");
+      // If it does, run the toggleTtsState function
+      toggleTtsState();
+    }
+
+    // Custom Context
+    const hostButtons = document.getElementById("hostButtons");
+
+    hostButtons.addEventListener("change", function (e) {
+      // const submitAsButton = document.getElementById("submitAs");
+      // const submitToButtonGroup = document.getElementById("submitTo");
+      // if (e.target.tagName === "INPUT" && e.target.type === "checkbox") {
+      //   const hostName = e.target.nextElementSibling.textContent;
+      //   const checkedBoxes = hostButtons.querySelectorAll(
+      //     'input[type="checkbox"]:checked'
+      //   );
+      //   // if (!e.target.checked && checkedBoxes.length === 0) {
+      //   //   // Prevent unchecking if it's the last remaining checked checkbox
+      //   //   e.preventDefault();
+      //   //   // alert('At least one host must be selected.');
+      //   //   e.target.checked = true; // Ensure the checkbox stays checked
+      //   //   return;
+      //   // }
+
+      //   if (e.target.checked) {
+      //     // Host is checked, add to submit buttons
+      //     const optionAs = document.createElement("option");
+      //     optionAs.value = hostName;
+      //     optionAs.textContent = hostName;
+      //     submitAsButton.appendChild(optionAs);
+      //     optionAs.selected = true;
+      //     // addButton();
+      //     updateAvatar(hostName, "smile");
+
+      //     getHosts();
+      //     const submitToButton = document.createElement("input");
+      //     submitToButton.setAttribute("type", "submit");
+      //     submitToButton.setAttribute("name", "go");
+      //     submitToButton.setAttribute("value", hostName);
+      //     submitToButton.setAttribute(
+      //       "class",
+      //       "btn btn-rounded btn-outline-dark btn-sm"
+      //     );
+      //     submitToButtonGroup.appendChild(submitToButton);
+      //   } else {
+      //     // Host is unchecked, remove from submit buttons
+      //     const optionToRemoveAs = Array.from(submitAsButton.options).find(
+      //       (option) => option.value === hostName
+      //     );
+      //     if (optionToRemoveAs) {
+      //       submitAsButton.removeChild(optionToRemoveAs);
+      //     }
+
+      //     const submitToButtonToRemove = Array.from(
+      //       submitToButtonGroup.children
+      //     ).find((button) => button.value === hostName);
+      //     if (submitToButtonToRemove) {
+      //       submitToButtonGroup.removeChild(submitToButtonToRemove);
+      //     }
+      //   }
+      // }
+      updateUrl(document.getElementById("contextSelect").value.toLowerCase());
     });
+    const contentField = document.getElementById("contentField");
+    if (contentField) {
+      contentField.addEventListener("input", toggleTraining);
+    }
 
-  if (window.location.href.includes("voice=true")) {
-    console.log("Voice is enabled");
-    // If it does, run the toggleTtsState function
-    toggleTtsState();
+    // Parameters
+    // ----------------------------
+    var urlParams = new URLSearchParams(window.location.search);
+
+    var name = decodeURIComponent(urlParams.get("name") || "");
+
+    if (name) {
+      document.getElementById("nameInput").value = name;
+    }
+
+    // Interview
+    var role = decodeURIComponent(urlParams.get("role") || "");
+    var org = decodeURIComponent(urlParams.get("org") || "");
+
+    if (role) {
+      document.getElementById("roleInput").value = role;
+    }
+
+    if (org) {
+      document.getElementById("orgInput").value = org;
+    }
+
+    // Debate
+    var topic = decodeURIComponent(urlParams.get("topic") || "");
+
+    if (topic) {
+      document.getElementById("topicInput").value = topic;
+    }
+
+    updateContext();
+
+    preloadImages(proxies);
+
+    // Run on page load
+    updateUrl(String(siteId));
+    updateContent();
+    processParameters();
+    toggleTraining();
   }
-
-  // Custom Context
-  const hostButtons = document.getElementById("hostButtons");
-
-  hostButtons.addEventListener("change", function (e) {
-    // const submitAsButton = document.getElementById("submitAs");
-    // const submitToButtonGroup = document.getElementById("submitTo");
-    // if (e.target.tagName === "INPUT" && e.target.type === "checkbox") {
-    //   const hostName = e.target.nextElementSibling.textContent;
-    //   const checkedBoxes = hostButtons.querySelectorAll(
-    //     'input[type="checkbox"]:checked'
-    //   );
-    //   // if (!e.target.checked && checkedBoxes.length === 0) {
-    //   //   // Prevent unchecking if it's the last remaining checked checkbox
-    //   //   e.preventDefault();
-    //   //   // alert('At least one host must be selected.');
-    //   //   e.target.checked = true; // Ensure the checkbox stays checked
-    //   //   return;
-    //   // }
-
-    //   if (e.target.checked) {
-    //     // Host is checked, add to submit buttons
-    //     const optionAs = document.createElement("option");
-    //     optionAs.value = hostName;
-    //     optionAs.textContent = hostName;
-    //     submitAsButton.appendChild(optionAs);
-    //     optionAs.selected = true;
-    //     // addButton();
-    //     updateAvatar(hostName, "smile");
-
-    //     getHosts();
-    //     const submitToButton = document.createElement("input");
-    //     submitToButton.setAttribute("type", "submit");
-    //     submitToButton.setAttribute("name", "go");
-    //     submitToButton.setAttribute("value", hostName);
-    //     submitToButton.setAttribute(
-    //       "class",
-    //       "btn btn-rounded btn-outline-dark btn-sm"
-    //     );
-    //     submitToButtonGroup.appendChild(submitToButton);
-    //   } else {
-    //     // Host is unchecked, remove from submit buttons
-    //     const optionToRemoveAs = Array.from(submitAsButton.options).find(
-    //       (option) => option.value === hostName
-    //     );
-    //     if (optionToRemoveAs) {
-    //       submitAsButton.removeChild(optionToRemoveAs);
-    //     }
-
-    //     const submitToButtonToRemove = Array.from(
-    //       submitToButtonGroup.children
-    //     ).find((button) => button.value === hostName);
-    //     if (submitToButtonToRemove) {
-    //       submitToButtonGroup.removeChild(submitToButtonToRemove);
-    //     }
-    //   }
-    // }
-    updateUrl(document.getElementById("contextSelect").value.toLowerCase());
-  });
-  const contentField = document.getElementById("contentField");
-if (contentField) {
-  contentField.addEventListener("input", toggleTraining);
-}
-
-  // Parameters
-  // ----------------------------
-  var urlParams = new URLSearchParams(window.location.search);
-
-  var name = decodeURIComponent(urlParams.get("name") || "");
-
-  if (name) {
-    document.getElementById("nameInput").value = name;
-  }
-
-  // Interview
-  var role = decodeURIComponent(urlParams.get("role") || "");
-  var org = decodeURIComponent(urlParams.get("org") || "");
-
-  if (role) {
-    document.getElementById("roleInput").value = role;
-  }
-
-  if (org) {
-    document.getElementById("orgInput").value = org;
-  }
-
-  // Debate
-  var topic = decodeURIComponent(urlParams.get("topic") || "");
-
-  if (topic) {
-    document.getElementById("topicInput").value = topic;
-  }
-
-  updateContext();
-
-  preloadImages(proxies);
-
-  // Run on page load
-  updateUrl(String(siteId));
-  updateContent();
-  processParameters();
-  toggleTraining();
 });
 
 window.onload = function () {};
