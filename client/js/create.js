@@ -121,6 +121,7 @@ function toggleOtherEthnicity(select) {
 }
 
 async function submitFormData(formData) {
+  console.log(formData)
   try {
     const response = await fetch("/create-proxy", {
       method: "POST",
@@ -162,7 +163,6 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         UI.handleFormSuccess();
         const formData = new FormData(this);
-        console.log("Form Data:", formData);
         const proxyName = formData.get("proxyName").replace(/ /g, "-");
         formData.set("proxyName", proxyName);
         formData.append("clientId", WebSocketManager.clientId);

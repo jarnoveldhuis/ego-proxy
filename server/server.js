@@ -336,7 +336,7 @@ Do not use any other expressions than the ones listed and do not use any of thes
       res.send({
         personalityUpdated: true,
         transcriptSummary: transcriptSummary,
-        answer: `${submitTo}: Personality updated! (Smile)`,
+        answer: `${submitTo}: Personality updated! (Friendly)`,
       });
     } catch (error) {
       console.error("Error summarizing transcript:", error);
@@ -522,8 +522,8 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 app.post("/create-proxy", upload.single("file"), async (req, res) => {
   const proxyName = req.body.proxyName;
   genderIdentity = req.body.genderIdentity;
-  const ethnicity = req.body.ethnicity;
-
+  const ethnicity = req.body.ethnicity !== "Other" ? req.body.ethnicity : req.body.otherEthnicity;
+  console.log("ethnicity", ethnicity)
   let nameExists;
   try {
     nameExists = await checkNameExists(proxyName);
@@ -579,7 +579,7 @@ wss.on("connection", (ws) => {
   // Store the clientId and ws in your tracking object or map
   clients[clientId] = ws;
   console.log(`New client connected with ID: ${clientId}`);
-
+https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.interviewmagazine.com%2Fculture%2Fstavros-halkias-on-ozempic-hunter-biden-and-paneras-charged-lemonade&psig=AOvVaw2Qd4vHrcWVwLGhzBEpSJJf&ust=1726088704197000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCLCIg9ajuYgDFQAAAAAdAAAAABAE
   // Optionally, send the clientId back to the client
   ws.send(JSON.stringify({ type: "clientId", clientId }));
 
@@ -616,7 +616,7 @@ async function describeImageBase(base64) {
           content: [
             {
               type: "text",
-              text: "You are an author describing a character inspired by this picture. Describe the image as a children's cartoon to your illustrator. Do not mention facial expressions or background. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
+              text: "You are an author describing a character inspired by this picture. Describe the image as a children's cartoon to your illustrator. Emphasize any feat If the image includes unflattering qualities like balding, obesity, etc... please include this in your description. Do not mention facial expressions. The background must be pure white. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
             },
             {
               type: "image_url",
@@ -980,7 +980,7 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
   let avatarDescription = `Appearance:
   ${photoDescription}
 
-  Style Details: Capture the essence of this cartoon using a Low-Poly style with geometric shapes and flat colors emphasizing a clear, recognizable likeness without detailed textures.
+  Style Details: Capture the essence of this description using a Low-Poly children's cartoon style with geometric shapes and flat colors emphasizing a clear, recognizable likeness without detailed textures. Add a subtle psychadelic effect to the image to make it more visually interesting.
 
   Important:
   - The eyes must be directed straight forward.
@@ -1057,9 +1057,9 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     sendProgress(ws);
     console.log("Beginning emotion generation...");
 
-    let emotionInstructions = `Render an ${ethnicity} ${genderIdentity} staring straight ahead against a pure white background in an extreme state of`;
+    let emotionInstructions = `Render a ${ethnicity} ${genderIdentity} staring straight ahead against a pure white background in an extreme state of`;
 
-    let speakDescription = `${emotionInstructions} SPEAKING!`;
+    let speakDescription = `${emotionInstructions} TALKING! MOUTH MUST BE OPEN!`;
 
     let friendlyDescription = `${emotionInstructions} FRIENDLINESS!`;
 
@@ -1076,6 +1076,8 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     let afraidDescription = `${emotionInstructions} FEAR!`;
 
     let embarassedDescription = `${emotionInstructions} EMBARASSMENT!`;
+
+    let intriguedDescription = `${emotionInstructions} INTRIGUED!`;
 
     // Prompt Array for Each Emotion
     let subsequentPrompts = [
@@ -1096,6 +1098,8 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
       `${afraidDescription}
       ${avatarDescription}`,
       `${embarassedDescription}
+      ${avatarDescription}`,
+      `${intriguedDescription}
       ${avatarDescription}`,
     ];
 
@@ -1138,11 +1142,15 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
           emotions.embarassedUrl = response.data.data[0].url;
           emotions.embarassedPrompt = response.data.data[0].revised_prompt;
           break;
+        case 9:
+          emotions.intriguedUrl = response.data.data[0].url;
+          emotions.intriguedPrompt = response.data.data[0].revised_prompt;
+          break;
         default:
           console.warn(`No case for index ${index}`);
       }
     };
-
+    console.log("subsequentPrompts:", subsequentPrompts); 
     // Create an array of promises for the axios requests
     const requests = subsequentPrompts.map((prompt, index) =>
       axios
@@ -1184,6 +1192,7 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
         fear: [{ url: emotions.fearUrl }],
         angry: [{ url: emotions.angryUrl }],
         embarassed: [{ url: emotions.embarassedUrl }],
+        intrigued: [{ url: emotions.intriguedUrl }],
         imagePrefix: "img/Guest/",
         email: proxyEmail,
       })

@@ -156,15 +156,18 @@
                   <option value="Date" <% if (context.context === 'Date') { %>selected<% } %>>Date</option>
                   <option value="Debate" <% if (context.context === 'Debate') { %>selected<% } %>>Debate</option>
                 </select>
-
+                <small id="contextDescription" class="form-text text-muted">Update manually or click the train button to refine.</small>
               </div>
-
+              
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="d-flex">
+                <div>
                   <label for="contentField" id="contentId">Profile</label>
+                  <br>
+                  <!-- <small class="form-text text-muted">This profile informs how your proxy behaves. Update manually or click the train button to refine.</small> -->
                 </div>
+              
                 <div class="d-flex">
-                  <button type="button" class="btn btn-outline-secondary btn-sm" id="repeatTraining" data-toggle="tooltip" data-placement="left" title="Tooltip on left" onclick="train()">
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="repeatTraining" data-toggle="tooltip" data-placement="left" title="Practice to refine your profile." onclick="train()">Practice
                     <i class="fas fa-chalkboard-teacher"></i>
                   </button>
                   <button class="btn btn-outline-secondary btn-sm ml-2" id="save" disabled onclick="updateProxy(event)">

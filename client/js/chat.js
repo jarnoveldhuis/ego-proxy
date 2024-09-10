@@ -720,6 +720,9 @@ function updateContext() {
   document.getElementById("debateModal").style.display =
     context === "Debate" ? "block" : "none";
   var context = document.getElementById("contextSelect").value;
+  const saveButton = document.getElementById("save");
+
+  saveButton.disabled = true;
 
   // document.getElementById("save").innerText = "Save" + " " + contentId;
   // document.getElementById('meetModal').style.display = context === 'meet' ? 'block' : 'none';
@@ -787,8 +790,11 @@ function updateContent() {
   document.getElementById("contentIdField").value = contentId;
 
   document.getElementById("contentField").value = content;
-  toggleTraining();
+  // toggleTraining();
   document.getElementById("contentId").innerHTML = `<b>${contentName}:</b>`;
+
+  document.getElementById("contextDescription").innerText = proxies[Object.keys(proxies)[0]][contentId+"Instructions"];
+
   // document.getElementById("begin").innerText =
   //   selectElement.value + " " + proxyName;
 
@@ -984,6 +990,7 @@ function train() {
 
   switch (selectedContext) {
     case "Interview":
+      console.log()
       addButton(null, "Donnie");
       redirectToUrl(trainingUrl);
       break;
@@ -994,7 +1001,7 @@ function train() {
       break;
 
     case "Date":
-      addButton(null, "Donnie");
+      addButton(null, "Shadow");
       redirectToUrl(trainingUrl);
       break;
 
@@ -1270,9 +1277,9 @@ function beginTraining(transcriptText) {
 function doneTyping() {
   submitAs = document.getElementById("submitAs").value;
   if (submitAs in proxies) {
-    updateAvatar(submitAs, "friendly");
+    updateAvatar(submitAs, "speak");
   } else {
-    updateAvatar(avatar, "friendly");
+    updateAvatar(avatar, "intrigued");
   }
   // avatar = document.getElementById('submitAs').value;
   // updateAvatar(avatar, 'smile')
@@ -1592,7 +1599,7 @@ document.getElementById("userInput").addEventListener("keypress", function () {
   if (submitAs in proxies) {
     updateAvatar(submitAs, "speak");
   } else {
-    // updateAvatar(avatar, "friendly");
+    updateAvatar(avatar, "intrigued");
   }
   typingTimer = setTimeout(doneTyping, doneTypingInterval);
   // }
