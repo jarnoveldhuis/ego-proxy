@@ -990,23 +990,26 @@ function train() {
 
   switch (selectedContext) {
     case "Interview":
-      console.log()
-      addButton(null, "Donnie");
+      // addButton(null, "Donnie");
+      trainingUrl = trainingUrl+"guest=Donnie"
       redirectToUrl(trainingUrl);
       break;
 
     case "Meet":
-      addButton(null, "Jarno");
+      // addButton(null, "Jarno");
+      trainingUrl = trainingUrl+"guest=Jarno"
       redirectToUrl(trainingUrl);
       break;
 
     case "Date":
-      addButton(null, "Shadow");
+      // addButton(null, "Shadow");
+      trainingUrl = trainingUrl+"guest=Shadow"
       redirectToUrl(trainingUrl);
       break;
 
     case "Debate":
-      addButton(null, "Donnie");
+      // addButton(null, "Donnie");
+      trainingUrl = trainingUrl+"guest=Donnie"
       redirectToUrl(trainingUrl);
       break;
 
@@ -1326,7 +1329,7 @@ function updateUrl(context) {
 
   // Remove any existing "guest" parameter to ensure it's replaced
   params.delete("guest");
-
+  
   if (guestNamesSet.size > 0) {
     params.append("guest", Array.from(guestNamesSet).join(","));
   }
@@ -1847,6 +1850,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     updateContent();
     processParameters();
     toggleTraining();
+    document.body.classList.toggle('dark-mode');
   }
 });
 

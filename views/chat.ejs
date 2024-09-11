@@ -91,13 +91,13 @@
               <% } %>
             </div>
 
-            <div class="d-flex align-items-center">
+            <div class="d-flex submit-prompt align-items-center">
               Submit to:&nbsp;
               <span id="newButtonPlaceholder"></span>
               <div class="btn-group" id="submitTo" role="group">
                 <% if (context.submitToOptions && context.context !=='Custom' ) { %>
                 <% context.submitToOptions.forEach(function(option) { %>
-                <input class="btn btn-rounded btn-outline-dark btn-sm" name="go" type="submit" value="<%= option %>" data-tag="button-<%= option %>">
+                <input class="btn btn-rounded btn-outline-dark btn-sm" name="go" type="submit" value="<%= option %>" data-tag="button-<%= option %>" style=" background-color: black; color: white; border-color: white; outline-color: white;">
                 <% }); %>
                 <% } %>
               </div>
@@ -163,15 +163,16 @@
                 <div>
                   <label for="contentField" id="contentId">Profile</label>
                   <br>
-                  <!-- <small class="form-text text-muted">This profile informs how your proxy behaves. Update manually or click the train button to refine.</small> -->
+                  <small class="form-text text-muted">Click practice to refine your profile automatically.</small>
                 </div>
               
                 <div class="d-flex">
-                  <button type="button" class="btn btn-outline-secondary btn-sm" id="repeatTraining" data-toggle="tooltip" data-placement="left" title="Practice to refine your profile." onclick="train()">Practice
-                    <i class="fas fa-chalkboard-teacher"></i>
+                  
+                  <button type="button" class="btn btn-outline-dark btn-sm" id="repeatTraining" data-toggle="tooltip" data-placement="left" title="Practice to refine your profile." onclick="train()">Practice
+                    <i class="fas menuIcon fa-chalkboard-teacher"></i>
                   </button>
-                  <button class="btn btn-outline-secondary btn-sm ml-2" id="save" disabled onclick="updateProxy(event)">
-                    <i class="fas fa-save"></i>
+                  <button class="btn btn-outline-dark btn-sm ml-2" id="save" disabled onclick="updateProxy(event)">
+                    <i class="fas menuIcon fa-save"></i>
                   </button>
                 </div>
               </div>
@@ -187,7 +188,7 @@
                 <button type="button" class="btn btn-primary" style="display:none" id="meetProxy" onclick="updateProxy(), meet('share')">
                   <%= Object.keys(proxies)[0] %> <%= Object.keys(proxies)[0] %>
                 </button>
-                <button class="btn btn-secondary" id="save" disabled onclick="updateProxy()">
+                <button class="btn btn-primary" id="save" disabled onclick="updateProxy()">
                   Save
                 </button>
                 <button type="button" class="btn btn-primary" id="trainProxy" data-toggle="tooltip" data-placement="left" title="Tooltip on left" onclick="updateProxy(), train()">
@@ -211,7 +212,7 @@
               <div class="tab-pane fade" id="custom" role="tabpanel" aria-labelledby="custom-tab">
                 <!-- Guest Field -->
                 <div class="dropdown">
-                  <button class="btn btn-primary dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                  <button class="btn btn-outline-dark dropdown-toggle" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                     Add Guests
                   </button>
                   <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -357,7 +358,7 @@
                     <!-- <label for="guestInput" class="col-form-label col-form-label-sm col" style='font-weight: bold;'><b>Guest Names </b></label> -->
                     <label for="dropdownMenuButton" id="guestProxies" class="col-form-label col-form-label-sm col" style='font-weight: bold;'><b>Guest Proxies:</b></label><br>
                     <!-- <b id="guestProxies" style="display: block;">Guest Proxies:</b> -->
-                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle dropdown-toggle-split" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    <button class="btn btn-sm btn-outline-dark dropdown-toggle dropdown-toggle-split" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                       Add Guest
                     </button>
                     <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -390,7 +391,7 @@
               </div>
 
 
-              <!-- <button class="btn btn-sm btn-outline-secondary dropdown-toggle dropdown-toggle-split" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              <!-- <button class="btn btn-sm btn-outline-primary dropdown-toggle dropdown-toggle-split" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                 Add Guest
               </button> -->
 
@@ -416,7 +417,7 @@
               
               <div class="input-group url input-group-sm mb-3">
                 <input type="text" id="urlInput" class="form-control col-10" readonly>
-                <button type="button" id="urlCopy" onclick="copyUrl()" class="btn btn-outline-primary" data-bs-toggle="tooltip" data-bs-placement="top" title="Copied!">Copy</button>
+                <button type="button" id="urlCopy" onclick="copyUrl()" class="btn btn-outline-dark" data-bs-toggle="tooltip" data-bs-placement="top" title="Copied!">Copy</button>
 
               </div>
               </div>
@@ -430,31 +431,31 @@
                   <%= Object.keys(proxies)[0] %> <%= Object.keys(proxies)[0] %>
                 </button> -->
 
-              <button type="button" class="btn btn-outline-secondary" id="meetProxy" onclick="redirectToUrl(regularUrl)">
+              <button type="button" class="btn btn-dark" id="meetProxy" onclick="redirectToUrl(regularUrl)">
                 Meet <%= Object.keys(proxies)[0] %>
               </button>
 
-              <button type="button" class="btn btn-outline-secondary" id="beginTraining" data-toggle="tooltip" data-placement="left" title="Tooltip on left" onclick="train()">
+              <button type="button" class="btn btn-outline-primary" id="beginTraining" data-toggle="tooltip" data-placement="left" title="Tooltip on left" onclick="train()">
                 Train <%= Object.keys(proxies)[0] %>
               </button>
-              <!-- <button class="btn btn-secondary" id="save" disabled onclick="updateProxy()">
+              <!-- <button class="btn btn-primary" id="save" disabled onclick="updateProxy()">
                     Save
                   </button> -->
 
-              <!-- <small class="text-muted ms-2">Refines your profile with each practice</small> -->
+
               <span class="ms-2" tabindex="0" data-bs-toggle="popover" data-bs-trigger="focus" title="Practice Debates" data-bs-content="Refines your profile with each practice">
                 <i class="bi bi-info-circle"></i>
               </span>
 
               <!-- <button type="button" class="btn btn-primary" id="begin" onclick="redirectToUrl(regularUrl)">Meet <%= Object.keys(proxies)[0] %></button>
-                  <button type="button" class="btn btn-secondary" style="display:none" id="backToProfile" onclick="backToProfile()">Cancel</button> -->
+                  <button type="button" class="btn btn-primary" style="display:none" id="backToProfile" onclick="backToProfile()">Cancel</button> -->
             </div>
 
 
 
 
             <!-- <button type="button" class="btn btn-primary" id="begin" onclick="redirectToUrl(regularUrl)">Meet <%= Object.keys(proxies)[0] %></button>
-                  <button type="button" class="btn btn-secondary" style="display:none" id="backToProfile" onclick="backToProfile()">Cancel</button> -->
+                  <button type="button" class="btn btn-primary" style="display:none" id="backToProfile" onclick="backToProfile()">Cancel</button> -->
 
             <!-- <div id='url'><b>Shareable URL:</b></div>
                 <div class="input-group url input-group-sm mb-3">
@@ -466,7 +467,7 @@
             <!---Profile Tab-->
             <!-- <div class="tab-pane fade  active show" id="profile" role="tabpanel" aria-labelledby="profile-tab"> -->
             <!-- Content Field -->
-            <!-- <button type="button" class="btn btn-secondary btn-sm" id="save" disabled onclick="updateProxy()"></button> -->
+            <!-- <button type="button" class="btn btn-primary btn-sm" id="save" disabled onclick="updateProxy()"></button> -->
 
 
             <!-- </div> -->

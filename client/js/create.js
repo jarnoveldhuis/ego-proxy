@@ -67,6 +67,18 @@ const WebSocketManager = {
         break;
     }
   },
+  startSimulatedProgress() {
+    this.simulatedProgress = 0;
+    this.simulatedProgressInterval = setInterval(() => {
+      if (this.simulatedProgress < 100) {
+        this.simulatedProgress += 1;
+        UI.updateProgressBar(this.simulatedProgress);
+      }
+    }, 1000);
+  },
+  stopSimulatedProgress() {
+    clearInterval(this.simulatedProgressInterval);
+  },
 };
 
 const UI = {

@@ -1,5 +1,5 @@
 body {
-  background-color: #000000;
+  background-color: #ffffff;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -203,10 +203,10 @@ body {
 #prompt {
 
   font-size: 1.1em;
-  border: #ffffff;
+  border: #000000;
   /* (A2) COLORS */
-  color: #ffffff;
-  background: #000000;
+  color: #000000;
+  background: #ffffff;
 
   /* (A3) DIMENSIONS + POSITION */
   position: relative;
@@ -261,9 +261,6 @@ textarea {
 
 .userInput.form-control {
   font-size: 16px !important;
-  background-color: #000000;
-  color: rgb(255, 255, 255);
-  border-color: #ffffff;
 }
 
 
@@ -290,10 +287,9 @@ textarea {
 /* (B) ADD SPEECH "CALLOUT TAIL" */
 /* (B1) USE ::AFTER TO CREATE THE "TAIL" */
 .speech::after {
-  
   /* (B1-1) ATTACH TRANSPARENT BORDERS */
   content: "";
-  border: 20px solid;
+  border: 20px solid transparent;
 
   /* (B1-2) NECESSARY TO POSITION THE "TAIL" */
   position: absolute;
@@ -302,15 +298,11 @@ textarea {
 /* (B2) BOTTOM "CALLOUT TAIL" */
 .bottom.speech::after {
   /* (B2-1) DOWN TRIANGLE */
-  border-top-color: #ffffff;
-  
-  color: #00000000;
-  background: #00000000;
-  
+  border-top-color: #000000;
   border-bottom: 0;
   position: absolute;
   /* (B2-2) POSITION AT BOTTOM */
-  bottom: -20px;
+  bottom: -19px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 1; /* adjust as needed */
@@ -417,10 +409,6 @@ textarea {
   width: 100%;
 } */
 
-.userInput {
-
-  /* This is an example value; adjust as needed */
-}
 
 @keyframes laughAnimation {
 
@@ -434,23 +422,14 @@ textarea {
   }
 }
 
-.submit-prompt {
-  color: #ffffff;
-}
-
 .laughing {
   animation: laughAnimation 0.3s
    ease-in-out infinite;
 }
 
 
-.fas {
-  color: #ffffff;
-}
 
-.menuIcon {
-  color: #000000;
-} 
+
 
 /* Custom styles for the toggle button with icon */
 .form-check-input {
@@ -650,13 +629,10 @@ h1 {
 } */
 
 
-#submitAs {
-  background-color: black;
-  color: white;
-  border-color: white;
+/* #submitAs {
   width: max-content;
 }
-/* 
+
 .input {
   width: auto;
 } */

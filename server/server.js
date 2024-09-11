@@ -616,7 +616,7 @@ async function describeImageBase(base64) {
           content: [
             {
               type: "text",
-              text: "You are an author describing a character inspired by this picture. Describe the image as a children's cartoon to your illustrator. Emphasize any feat If the image includes unflattering qualities like balding, obesity, etc... please include this in your description. Do not mention facial expressions. The background must be pure white. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
+              text: "You are an author describing a character inspired by this picture. Describe the image as an adult swim cartoon to your illustrator. Do not mention facial expressions. The background must be pure black. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
             },
             {
               type: "image_url",
@@ -984,7 +984,7 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
 
   Important:
   - The eyes must be directed straight forward.
-  - The background must be pure white.
+  - The background must be pure black.
   - The emotion of the image must be cartoonishly exaggerated and extreme.`;
   console.log("Avatar Description:", avatarDescription);
 
@@ -1057,15 +1057,15 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     sendProgress(ws);
     console.log("Beginning emotion generation...");
 
-    let emotionInstructions = `Render a ${ethnicity} ${genderIdentity} staring straight ahead against a pure white background in an extreme state of`;
+    let emotionInstructions = `Render a ${ethnicity} ${genderIdentity} staring straight ahead against a pure black background in an extreme state of`;
 
     let speakDescription = `${emotionInstructions} TALKING! MOUTH MUST BE OPEN!`;
 
     let friendlyDescription = `${emotionInstructions} FRIENDLINESS!`;
 
-    let confusedDescription = `${emotionInstructions} CONFUSION AND DEEP THOUGHT!`;
+    let confusedDescription = `${emotionInstructions} CONFUSION!`;
 
-    let joyDescription = `${emotionInstructions} LAUGHTER!`;
+    let joyDescription = `${emotionInstructions} JOY AND LAUGHTER!`;
 
     let sadDescription = `${emotionInstructions} DESPAIR!`;
 
