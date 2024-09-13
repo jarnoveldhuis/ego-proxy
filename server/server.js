@@ -42,6 +42,7 @@ let globalCast;
 let globalDataStore = {};
 let subdomain;
 let progress;
+let storyProgress;
 
 // MIDDLEWARE
 app.use(express.json());
@@ -250,7 +251,8 @@ app.post("/ask/", async (req, res) => {
 
 I'm feeling great today! (Joy):
 
-Do not use any other expressions than the ones listed and do not use any of these emotions twice in a row. \nCharacters: ${globalCast}\n`;
+Do not use any other expressions than the ones listed and do not use any of these emotions twice in a row. \nCharacters: ${globalCast}\n
+${storyProgress}`;
   const proxies = dataForSiteId.proxies;
   const context = dataForSiteId.context;
   const profile = proxies[submitAs] ? proxies[submitAs][siteId] : "";
@@ -332,7 +334,7 @@ Do not use any other expressions than the ones listed and do not use any of thes
       // calculateAndLogCost(userMessage, assistantMessage);
       const currentURL = req.protocol + "://" + req.get("host") + "/" + siteId;
       const profileURL = req.protocol + "://" + req.get("host");
-
+      
       res.send({
         personalityUpdated: true,
         transcriptSummary: transcriptSummary,
@@ -351,8 +353,8 @@ Do not use any other expressions than the ones listed and do not use any of thes
     const progress = Math.floor(
       (transcript.length / transcriptThreshold) * 100
     );
-    const intelligence =
-      siteId === "meet" ? ` Conversation is ` + progress + `% complete.\n` : "";
+    const storyProgress =
+      siteId === "meet" ? ` The story is a surreal comedy with a twist ending. The orientaion is now ` + progress + `% complete. Use the transcript thus far to inform your personality.\n` : "";
     const previousProxy = proxies[previousSpeaker] || "";
 
     if (previousProxy[siteId]) {
@@ -366,9 +368,10 @@ Do not use any other expressions than the ones listed and do not use any of thes
     const systemMessage = `${proxyMessage}${contextMessage}`;
 
     const payload = createPayload(
-      systemMessage + previousProxyProfile,
+      systemMessage + storyProgress + previousProxyProfile,
       userMessage + transcript
     );
+    console.log(payload)
     const assistantMessage = await getAssistantResponse(payload);
     res.send({ answer: assistantMessage });
   }
@@ -616,7 +619,7 @@ async function describeImageBase(base64) {
           content: [
             {
               type: "text",
-              text: "You are an author describing a character inspired by this picture. Describe the image as an adult swim cartoon to your illustrator. Do not mention facial expressions. The background must be pure black. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
+              text: "You are an author describing a character inspired by this picture. Describe the image as an a children's cartoon to your illustrator. Do not mention facial expressions. The background must be pure black. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
             },
             {
               type: "image_url",
@@ -1077,7 +1080,7 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
 
     let embarassedDescription = `${emotionInstructions} EMBARASSMENT!`;
 
-    let intriguedDescription = `${emotionInstructions} INTRIGUED!`;
+    let intriguedDescription = `${emotionInstructions} INTRIGUED! HAND ON THEIR CHIN!`;
 
     // Prompt Array for Each Emotion
     let subsequentPrompts = [

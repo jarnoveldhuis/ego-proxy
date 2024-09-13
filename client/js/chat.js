@@ -38,6 +38,7 @@ let submitAsElement;
 let promptElement;
 let shareUrl;
 let trainingUrl;
+let trainingProgress = 0;
 
 // Settings
 let role;
@@ -524,6 +525,18 @@ async function askBot(event) {
     }
   }
 
+  const trainingProgressElement = document.getElementById("trainingProgressBar");
+
+  function updateProgressBar(progressPercentage) {
+
+    trainingProgressElement.style.width = `${progressPercentage}%`;
+    trainingProgressElement.setAttribute("aria-valuenow", progressPercentage);
+    // trainingProgressElement.textContent = `${progressPercentage}%`;
+  }
+
+  console.log('Percent:', transcriptText.length / transcriptThreshold * 100);
+  trainingProgress = transcriptText.length / transcriptThreshold * 100;
+
   // Clear the input field immediately after the function runs
   userInputElem.value = "";
   updateAvatar(avatar, "smile");
@@ -534,12 +547,23 @@ async function askBot(event) {
   }, thinkDelay);
   // Clear the botResponse and add a 'loading' class to it
   console.log("Transcript Length:", transcriptText.length);
+  if (tutorial || training) {
+    // console.log(trainingProgress)
+    // updateProgressBar(trainingProgress)
+    if(trainingProgress < 100){
+    trainingProgressElement.textContent = `Training Progress: `+Math.floor(trainingProgress) + `%`;
+    } else {
+      trainingProgressElement.textContent = `Training Complete!`;
+    }
+  }
   if (
     transcriptText.length > transcriptThreshold &&
     // siteId === "meet" &&
     hasPersonality === false
   ) {
-    botResponse.textContent = `Updating Personality`;
+    document.getElementById("trainingProgressBar").innerText = "Updating Personality";
+    trainingProgressElement.textContent = `Updating Personality`;
+    botResponse.textContent = " ";
     botResponse.classList.add("loading");
     hasPersonality = true;
   } else {
@@ -571,17 +595,19 @@ async function askBot(event) {
         tutorial: tutorial,
       }),
     });
+    
 
     const data = await fetchResponse.json();
     if (data.personalityUpdated) {
+      rainingProgressElement.textContent = `Finished!`;
       settingsModal.show();
       document.getElementById("contentField").value = data.transcriptSummary;
       document.getElementById("toggleButton").style.display = "inline-block";
-
-      setTimeout(() => {
-        const contextUpdatedAlert = document.getElementById("contextUpdated");
-        contextUpdatedAlert.classList.add("show");
-      }, 1000);
+      // document.getElementById("trainingProgressBar").innerText = "Updating Personality";
+      // setTimeout(() => {
+      //   const contextUpdatedAlert = document.getElementById("contextUpdated");
+      //   contextUpdatedAlert.classList.add("show");
+      // }, 1000);
 
       proxies[Object.keys(proxies)[0]].meet = data.transcriptSummary;
       toggleTraining();
@@ -598,6 +624,8 @@ async function askBot(event) {
     }
 
     updatedText = data.answer.split(":").slice(1).join(":").trim();
+
+
 
     const lastWord = updatedText.match(/\((.*?)\)$/);
     if (lastWord) {
@@ -748,8 +776,8 @@ function updateContent() {
   const yourName = proxies[Object.keys(proxies)[0]][contentId + "Name"];
 
   document.getElementById("yourName").innerText = yourName + ":";
-  document.getElementById("guestProxies").innerText =
-    "Add Proxy " + yourName + ":";
+  document.getElementById("simulate").innerText =
+    "Simulate " + selectElement.value + ":";
   const content = proxies[Object.keys(proxies)[0]][contentId] || ""; // Fetch the content based on contentId
 
   // successMessage.style.display = "none"; // Hid success message
@@ -758,7 +786,10 @@ function updateContent() {
     document.getElementById("allUrl").style.display = "none";
     document.getElementById("allContent").style.display = "none";
     document.getElementById("toggleButton").style.display = "none";
-    document.getElementById("guests").style.display = "none";
+    document.getElementById("addProxyDropdown").style.display = "none";
+
+
+    // document.getElementById("guests").style.display = "none";
     // document.getElementById("navTabs").style.display = "none";
     // document.getElementById("begin").style.display = "block";
     // document.getElementById("profile").classList.remove("active");
@@ -779,6 +810,7 @@ function updateContent() {
   if (content === "" && contentId === "meet") {
     tutorial = true;
     console.log("Training mode enabled");
+    
     document.getElementById("toggleButton").style.display = "none";
     // var profileTab = new bootstrap.Tab(document.getElementById("profile-tab"));
 
@@ -793,7 +825,9 @@ function updateContent() {
   // toggleTraining();
   document.getElementById("contentId").innerHTML = `<b>${contentName}:</b>`;
 
-  document.getElementById("contextDescription").innerText = proxies[Object.keys(proxies)[0]][contentId+"Instructions"];
+  // document.getElementById("contextDescription").innerText = proxies[Object.keys(proxies)[0]][contentId+"Instructions"];
+
+  document.getElementById("shareDescription").innerText = proxies[Object.keys(proxies)[0]][contentId+"Instructions"];
 
   // document.getElementById("begin").innerText =
   //   selectElement.value + " " + proxyName;
@@ -811,8 +845,8 @@ function updateContent() {
   //   `${selectElement.value}:`;
 
   document.getElementById("contentField").placeholder =
-    "Click 'Train' below to generate your proxy's " +
-    contentName.toLowerCase() +
+    "Click 'Train' below to generate " +
+    contentName +
     " or just update manually here.";
   // document.getElementById("save").innerText = "Save " + contentName;
   // document.getElementById("meetProxy").innerText = "Meet " + proxy;
@@ -846,6 +880,11 @@ function checkParams(url) {
     }
   });
 }
+
+function testUrl(url) {
+  window.open(url, "_blank");
+}
+
 
 // Redirects to URL with new field parameters
 function redirectToUrl(url) {
@@ -1038,6 +1077,7 @@ function toggleTraining() {
   const currentContent = document.getElementById("contentField").value;
   const saveButton = document.getElementById("save");
   const meetButton = document.getElementById("meetProxy");
+  const testButton = document.getElementById("testProxy");
   const trainButton = document.getElementById("beginTraining");
 
   saveButton.classList.remove("btn-success");
@@ -1053,9 +1093,11 @@ function toggleTraining() {
   if (currentContent.trim() === "") {
     trainButton.style.display = "block";
     meetButton.style.display = "none";
+    testButton.disabled = true;
   } else {
     trainButton.style.display = "none";
     meetButton.style.display = "block";
+    testButton.disabled = false;
   }
 }
 
@@ -1519,9 +1561,9 @@ function addButton(buttonElement, option) {
   checkboxContainer.appendChild(formCheckDiv);
 
   // Show the Guest Proxies label if it's hidden
-  const guestProxiesLabel = document.getElementById("guestProxies");
-  if (guestProxiesLabel.style.display === "none") {
-    guestProxiesLabel.style.display = "block";
+  const simulateLabel = document.getElementById("simulate");
+  if (simulateLabel.style.display === "none") {
+    simulateLabel.style.display = "block";
   }
 
   // // Get the dropdown element
