@@ -525,17 +525,18 @@ async function askBot(event) {
     }
   }
 
-  const trainingProgressElement = document.getElementById("trainingProgressBar");
+  const trainingProgressElement = document.getElementById(
+    "trainingProgressBar"
+  );
 
   function updateProgressBar(progressPercentage) {
-
     trainingProgressElement.style.width = `${progressPercentage}%`;
     trainingProgressElement.setAttribute("aria-valuenow", progressPercentage);
     // trainingProgressElement.textContent = `${progressPercentage}%`;
   }
 
-  console.log('Percent:', transcriptText.length / transcriptThreshold * 100);
-  trainingProgress = transcriptText.length / transcriptThreshold * 100;
+  console.log("Percent:", (transcriptText.length / transcriptThreshold) * 100);
+  trainingProgress = (transcriptText.length / transcriptThreshold) * 100;
 
   // Clear the input field immediately after the function runs
   userInputElem.value = "";
@@ -550,8 +551,9 @@ async function askBot(event) {
   if (tutorial || training) {
     // console.log(trainingProgress)
     // updateProgressBar(trainingProgress)
-    if(trainingProgress < 100){
-    trainingProgressElement.textContent = `Training Progress: `+Math.floor(trainingProgress) + `%`;
+    if (trainingProgress < 100) {
+      trainingProgressElement.textContent =
+        `Training Progress: ` + Math.floor(trainingProgress) + `%`;
     } else {
       trainingProgressElement.textContent = `Training Complete!`;
     }
@@ -561,7 +563,8 @@ async function askBot(event) {
     // siteId === "meet" &&
     hasPersonality === false
   ) {
-    document.getElementById("trainingProgressBar").innerText = "Updating Personality";
+    document.getElementById("trainingProgressBar").innerText =
+      "Updating Personality";
     trainingProgressElement.textContent = `Updating Personality`;
     botResponse.textContent = " ";
     botResponse.classList.add("loading");
@@ -595,11 +598,10 @@ async function askBot(event) {
         tutorial: tutorial,
       }),
     });
-    
 
     const data = await fetchResponse.json();
     if (data.personalityUpdated) {
-      rainingProgressElement.textContent = `Finished!`;
+      trainingProgressElement.textContent = `Finished!`;
       settingsModal.show();
       document.getElementById("contentField").value = data.transcriptSummary;
       document.getElementById("toggleButton").style.display = "inline-block";
@@ -624,8 +626,6 @@ async function askBot(event) {
     }
 
     updatedText = data.answer.split(":").slice(1).join(":").trim();
-
-
 
     const lastWord = updatedText.match(/\((.*?)\)$/);
     if (lastWord) {
@@ -711,7 +711,7 @@ async function askBot(event) {
 //---------------------------------------------------------
 
 function getHosts(currentSpeaker) {
-  var checkboxes = document.querySelectorAll(
+  const checkboxes = document.querySelectorAll(
     '#hostButtons input[type="checkbox"]'
   );
   var hosts = [];
@@ -720,9 +720,11 @@ function getHosts(currentSpeaker) {
       hosts.push(checkbox.id);
     }
   });
-
+  console.log("Hosts:", hosts);
   // Remove the currentSpeaker from the hosts array
-  hosts = hosts.filter((host) => host !== currentSpeaker);
+  if (currentSpeaker) {
+    hosts = hosts.filter((host) => host !== currentSpeaker);
+  }
 
   if (hosts.length === 1) {
     // Only one host
@@ -740,7 +742,9 @@ function getHosts(currentSpeaker) {
 }
 
 function updateContext() {
+  
   var context = document.getElementById("contextSelect").value;
+  selectProxyBasedOnContext(context);
   document.getElementById("interviewModal").style.display =
     context === "Interview" ? "block" : "none";
   // document.getElementById("dateModal").style.display =
@@ -751,7 +755,7 @@ function updateContext() {
   const saveButton = document.getElementById("save");
 
   saveButton.disabled = true;
-
+  
   // document.getElementById("save").innerText = "Save" + " " + contentId;
   // document.getElementById('meetModal').style.display = context === 'meet' ? 'block' : 'none';
 }
@@ -767,17 +771,18 @@ function updateContext() {
 // }
 let originalContent;
 function updateContent() {
+  
   var successMessage = document.getElementById("contextUpdated");
   const selectElement = document.getElementById("contextSelect");
   const contentId = selectElement.value.toLowerCase(); // 'small talk', 'interview', 'date', 'debate'
   const contentName = proxies[Object.keys(proxies)[0]][contentId + "Prompt"];
-
+  
   // Content Name
   const yourName = proxies[Object.keys(proxies)[0]][contentId + "Name"];
 
   document.getElementById("yourName").innerText = yourName + ":";
-  document.getElementById("simulate").innerText =
-    "Simulate " + selectElement.value + ":";
+  // document.getElementById("simulate").innerText =
+  //   "Add Guest " + selectElement.value + ":";
   const content = proxies[Object.keys(proxies)[0]][contentId] || ""; // Fetch the content based on contentId
 
   // successMessage.style.display = "none"; // Hid success message
@@ -787,7 +792,6 @@ function updateContent() {
     document.getElementById("allContent").style.display = "none";
     document.getElementById("toggleButton").style.display = "none";
     document.getElementById("addProxyDropdown").style.display = "none";
-
 
     // document.getElementById("guests").style.display = "none";
     // document.getElementById("navTabs").style.display = "none";
@@ -810,7 +814,7 @@ function updateContent() {
   if (content === "" && contentId === "meet") {
     tutorial = true;
     console.log("Training mode enabled");
-    
+
     document.getElementById("toggleButton").style.display = "none";
     // var profileTab = new bootstrap.Tab(document.getElementById("profile-tab"));
 
@@ -822,12 +826,13 @@ function updateContent() {
   document.getElementById("contentIdField").value = contentId;
 
   document.getElementById("contentField").value = content;
-  // toggleTraining();
+  toggleTraining();
   document.getElementById("contentId").innerHTML = `<b>${contentName}:</b>`;
 
   // document.getElementById("contextDescription").innerText = proxies[Object.keys(proxies)[0]][contentId+"Instructions"];
 
-  document.getElementById("shareDescription").innerText = proxies[Object.keys(proxies)[0]][contentId+"Instructions"];
+  document.getElementById("shareDescription").innerText =
+    proxies[Object.keys(proxies)[0]][contentId + "Instructions"];
 
   // document.getElementById("begin").innerText =
   //   selectElement.value + " " + proxyName;
@@ -838,8 +843,8 @@ function updateContent() {
   // document.getElementById("yourName").innerText =
   // selectElement.value + " " + proxyName +" as:";
 
-  document.getElementById("meetProxy").innerHTML =
-    selectElement.value + " " + proxyName;
+  // document.getElementById("meetProxy").innerHTML =
+  //   selectElement.value + " " + proxyName;
 
   // document.getElementById("trainingContext").innerText =
   //   `${selectElement.value}:`;
@@ -884,7 +889,6 @@ function checkParams(url) {
 function testUrl(url) {
   window.open(url, "_blank");
 }
-
 
 // Redirects to URL with new field parameters
 function redirectToUrl(url) {
@@ -1030,25 +1034,25 @@ function train() {
   switch (selectedContext) {
     case "Interview":
       // addButton(null, "Donnie");
-      trainingUrl = trainingUrl+"guest=Donnie"
+      trainingUrl = trainingUrl + "guest=Amy";
       redirectToUrl(trainingUrl);
       break;
 
     case "Meet":
       // addButton(null, "Jarno");
-      trainingUrl = trainingUrl+"guest=Jarno"
+      trainingUrl = trainingUrl + "guest=Yarno";
       redirectToUrl(trainingUrl);
       break;
 
     case "Date":
       // addButton(null, "Shadow");
-      trainingUrl = trainingUrl+"guest=Shadow"
+      trainingUrl = trainingUrl + "guest=Avery";
       redirectToUrl(trainingUrl);
       break;
 
     case "Debate":
       // addButton(null, "Donnie");
-      trainingUrl = trainingUrl+"guest=Donnie"
+      trainingUrl = trainingUrl + "guest=Donnie";
       redirectToUrl(trainingUrl);
       break;
 
@@ -1091,12 +1095,12 @@ function toggleTraining() {
   }
 
   if (currentContent.trim() === "") {
-    trainButton.style.display = "block";
-    meetButton.style.display = "none";
+    // trainButton.style.display = "block";
+    // meetButton.style.display = "none";
     testButton.disabled = true;
   } else {
-    trainButton.style.display = "none";
-    meetButton.style.display = "block";
+    // trainButton.style.display = "none";
+    // meetButton.style.display = "block";
     testButton.disabled = false;
   }
 }
@@ -1341,93 +1345,18 @@ function extractName(userMessage) {
 function decodeAndEncode(value) {
   try {
     value = decodeURIComponent(value);
-  } catch (e) {}
+  } catch (e) { }
   return encodeURIComponent(value);
 }
 
-function updateUrl(context) {
-  var url = window.location.origin + "/" + context.replace(/\s/g, "");
-  var params = new URLSearchParams();
-  var nameInput = document.getElementById("nameInput");
-  // if (training === true) {
-  //   params.append("training", "true");
-  //   params.delete("guests");
-  // }
-  if (nameInput && nameInput.value) {
-    params.append("name", nameInput.value);
-  }
-
-  // Add checked names as a single "guest" parameter
-  var checkboxes = document.querySelectorAll(
-    "#hostButtons .form-check-input:checked"
-  );
-
-  // Use a Set to store unique guest names
-  var guestNamesSet = new Set(
-    Array.from(checkboxes).map(function (checkbox) {
-      return checkbox.id;
-    })
-  );
-
-  // Remove any existing "guest" parameter to ensure it's replaced
-  params.delete("guest");
-  
-  if (guestNamesSet.size > 0) {
-    params.append("guest", Array.from(guestNamesSet).join(","));
-  }
-
-  switch (context) {
-    case "interview":
-      var roleInput = document.getElementById("roleInput");
-      var orgInput = document.getElementById("orgInput");
-      // var interviewerInput = document.getElementById("interviewerInput");
-      if (roleInput && roleInput.value) {
-        params.append("role", roleInput.value);
-      }
-      if (orgInput && orgInput.value) {
-        params.append("org", orgInput.value);
-      }
-      // if (interviewerInput && interviewerInput.value) {
-      //   params.append("interviewer", decodeAndEncode(interviewerInput.value));
-      // }
-      break;
-
-    case "date":
-      // var dateInput = document.getElementById("dateInput");
-      // if (dateInput && dateInput.value) {
-      //   params.append("name", decodeAndEncode(dateInput.value));
-      // }
-      break;
-
-    case "debate":
-      // var opponentInput = document.getElementById("opponentInput");
-      var topicInput = document.getElementById("topicInput");
-
-      // if (opponentInput && opponentInput.value) {
-      //   params.append("opponent", decodeAndEncode(opponentInput.value));
-      // }
-      if (topicInput && topicInput.value) {
-        params.append("topic", topicInput.value);
-      }
-      break;
-  }
-  if (isTtsEnabled) {
-    params.append("voice", "true");
-  }
-  if (document.getElementById("urlInput")) {
-    var queryString = params.toString().replace(/\+/g, " ");
-    if (queryString) {
-      regularUrl = url + "?" + queryString;
-    } else {
-      regularUrl = url;
-    }
-    if (shareUrl) {
-    }
-    shareUrl = url + "?" + queryString + "&share";
-    trainingUrl = url + "?training=true&" + queryString;
-    document.getElementById("urlInput").value = shareUrl;
-  }
-}
+// Add event listeners to all checkboxes
+document
+  .querySelectorAll("#addProxySelect .form-check-input")
+  .forEach((checkbox) => {
+    checkbox.addEventListener("change", function () {
+      updateUrl(document.getElementById("contextSelect").value.toLowerCase());
+    });
+  });
 
 function alpha(e) {
   var k;
@@ -1445,63 +1374,174 @@ function alpha(e) {
 //   event.preventDefault(); // Prevent the default form submission
 //   updateProxy();
 // });
+function selectProxyBasedOnContext(context) {
+  // Define a mapping between context values and checkbox values
+  const contextToProxyMap = {
+    "Interview": "Amy",
+    "Debate": "Donnie",
+    "Date": "Avery",
+    "Meet": "Shadow",
+    // Add more mappings as needed
+  };
 
-function updateProxy() {
-  event.preventDefault(); // Prevent the default form submission behavior
+    // Deselect all checkboxes
+    const allCheckboxes = document.querySelectorAll("input.form-check-input");
+    allCheckboxes.forEach(checkbox => {
+      checkbox.checked = false;
+    });
 
-  if (saveButton.disabled === false) {
-    const contentId = document
-      .getElementById("contextSelect")
-      .value.toLowerCase();
-    const content =
-      document.getElementById("contentField").value.toLowerCase() || "";
+  // Get the checkbox value corresponding to the context
+  const checkboxValue = contextToProxyMap[context];
 
-    // Prepare the data to be sent
-    const formData = {
-      contentId: contentId,
-      content: content,
-    };
+  if (checkboxValue) {
+    // Find the checkbox with the corresponding value
+    const checkbox = document.querySelector(`input.form-check-input[value="${checkboxValue}"]`);
+    if (checkbox) {
+      // Select the checkbox
+      checkbox.checked = true;
+      // Optionally, trigger the change event to update the URL
+      checkbox.dispatchEvent(new Event('change'));
+    }
+  }
+}
 
-    // Use fetch to send the form data to the server
-    fetch("/update-proxy", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(formData),
+function updateUrl(context) {
+  const newProxy = document.getElementById("proxySelect").value;
+  var url = window.location.origin + "/" + context.replace(/\s/g, "");
+  var params = new URLSearchParams();
+  var nameInput = document.getElementById("nameInput");
+
+  if (nameInput && nameInput.value) {
+    params.append("name", nameInput.value);
+  }
+
+  // Add checked names as a single "guest" parameter
+  const checkboxes = document.querySelectorAll(
+    "#addProxyDropdown .form-check-input:checked"
+  );
+
+  var guests = [];
+  checkboxes.forEach(function (checkbox) {
+    guests.push(checkbox.value);
+  });
+
+  console.log("Checkboxes:", checkboxes);
+
+  let guestDisplay = "Select Proxies";
+
+  if (guests.length === 1) {
+    // Only one host
+    guestDisplay = `${guests[0]}`;
+  } else if (guests.length === 2) {
+    // Two hosts, join with ' and '
+    guestDisplay = `${guests[0]} and ${guests[1]}`;
+  } else if (guests.length > 2) {
+    // More than two hosts, format with commas and 'and'
+    guestDisplay = `${guests.slice(0, -1).join(", ")} and ${guests.slice(-1)}`;
+  } else {
+    // No hosts selected or only the currentSpeaker was selected
+    guestDisplay = "Select Proxies";
+  }
+
+  // Use a Set to store unique guest names
+  var guestNamesSet = new Set(
+    Array.from(checkboxes).map(function (checkbox) {
+      return checkbox.value; // Use value instead of id
     })
-      .then((response) => response.json())
-      .then((data) => {
-        console.log("Success:", data);
-        // alert('Record updated successfully'); // Show success message
-        proxies[Object.keys(proxies)[0]][contentId] = content;
-        // Update the proxy object
-        // Update the content of the "Personality" paragraph if applicable
-        if (contentId === "meet") {
-          document.getElementById("contentField").textContent =
-            proxies[submitTo].meet;
-        }
-        updateContent();
+  );
 
-        // Attempt to hide the modal
-        try {
-          const saveButton = document.getElementById("save");
-          saveButton.disabled = true;
-          saveButton.classList.add("btn-success");
-          // setTimeout(() => {
-          //   // saveButton.style.visibility = "hidden";
-          //   saveButton.classList.remove("btn-success");
-          // }, 3000);
-        } catch (error) {
-          console.error("Failed to show the success message:", error);
-        }
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-        alert("Failed to update record"); // Show error message
-      });
-    // Prevent the form from submitting in the traditional way
-    return false;
+
+  // Remove any existing "guest" parameter to ensure it's replaced
+  params.delete("guest");
+
+  if (guestNamesSet.size > 0) {
+    let addProxySelect = document.getElementById("addProxySelect");
+    console.log("Add Proxy Select:", guestDisplay);
+    addProxySelect.innerText = guestDisplay;
+    params.append("guest", Array.from(guestNamesSet).join(","));
+  }
+
+  switch (context) {
+    case "interview":
+      var roleInput = document.getElementById("roleInput");
+      var orgInput = document.getElementById("orgInput");
+      if (roleInput && roleInput.value) {
+        params.append("role", roleInput.value);
+      }
+      if (orgInput && orgInput.value) {
+        params.append("org", orgInput.value);
+      }
+
+      break;
+
+    case "date":
+      // Add any specific parameters for the "date" context here
+      break;
+
+    case "debate":
+      var topicInput = document.getElementById("topicInput");
+      if (topicInput && topicInput.value) {
+        params.append("topic", topicInput.value);
+      }
+      break;
+  }
+
+  // Function to select the checkbox based on selectedContext
+  
+
+
+
+  if (isTtsEnabled) {
+    params.append("voice", "true");
+  }
+
+  if (document.getElementById("urlInput")) {
+    // Function to replace the subdomain
+    function replaceSubdomain(url, newSubdomain) {
+      var urlObj = new URL(url);
+      var hostnameParts = urlObj.hostname.split(".");
+      if (hostnameParts.length > 1) {
+        hostnameParts[0] = newSubdomain;
+      } else {
+        hostnameParts.unshift(newSubdomain);
+      }
+      urlObj.hostname = hostnameParts.join(".");
+      return urlObj.toString();
+    }
+
+    // Replace the subdomain in the base URL
+    var newUrl = replaceSubdomain(url, newProxy);
+    console.log("New URL:", newUrl);
+
+    var queryString = params.toString().replace(/\+/g, " ");
+    if (queryString) {
+      regularUrl = newUrl + "?" + queryString;
+    } else {
+      regularUrl = newUrl;
+    }
+
+    shareUrl = newUrl + "?" + queryString + "&share";
+    trainingUrl = newUrl + "?training=true&" + queryString;
+    document.getElementById("urlInput").value = shareUrl;
+  }
+}
+
+// Add event listeners to all checkboxes
+document
+  .querySelectorAll("#addProxySelect .form-check-input")
+  .forEach((checkbox) => {
+    checkbox.addEventListener("change", function () {
+      updateUrl(document.getElementById("contextSelect").value.toLowerCase());
+    });
+  });
+
+function handleSelectChange(select) {
+  if (select.value === "other") {
+    document.getElementById("customProxyInput").style.display = "block";
+  } else {
+    document.getElementById("customProxyInput").style.display = "none";
+    addButton(select, select.value);
+    updateUrl(document.getElementById("contextSelect").value.toLowerCase());
   }
 }
 
@@ -1516,15 +1556,15 @@ function addButton(buttonElement, option) {
   }
 
   // Hide the input field with the ID nameInput
-  const nameInput = document.getElementById("nameInput");
-  if (nameInput) {
-    nameInput.remove();
-  }
+  // const nameInput = document.getElementById("nameInput");
+  // if (nameInput) {
+  //   nameInput.remove();
+  // }
 
   // Get the container where the input field is located
   const inputContainer = document.getElementById("inputContainer");
   const checkboxContainer = document.getElementById("hostButtons");
-
+  const checkboxSelect = document.getElementById("addProxySelect");
   // Disable the button to prevent multiple clicks
   if (buttonElement) {
     buttonElement.classList.add("disabled");
@@ -1711,6 +1751,7 @@ document
       });
   });
 
+
 document.addEventListener("DOMContentLoaded", (event) => {
   submitButton = document.querySelector('.btn-group input[type="submit"]');
   submitAsElement = document.getElementById("submitAs");
@@ -1726,6 +1767,18 @@ document.addEventListener("DOMContentLoaded", (event) => {
     settingsModal = new bootstrap.Modal(
       document.getElementById("settingsModal")
     );
+    document.getElementById("proxySelect").addEventListener("change", function () {
+      
+      const selectedValue = this.value;
+      if (selectedValue === "createNewProxy") {
+        // Open the "Create New Proxy" link in a new tab
+        window.open(createProxyLink.href, "_blank");
+        console.log(createProxyLink.href)
+        // Optionally, reset the dropdown to the first option
+        this.selectedIndex = 0;
+      }
+    });
+
   }
   const inputElement = document.getElementById("userInput");
   const imageElement = document.getElementById("botImage");
@@ -1853,7 +1906,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     if (contentField) {
       contentField.addEventListener("input", toggleTraining);
     }
-
+    selectProxyBasedOnContext(document.getElementById("contextSelect").value);
     // Parameters
     // ----------------------------
     var urlParams = new URLSearchParams(window.location.search);
@@ -1892,8 +1945,8 @@ document.addEventListener("DOMContentLoaded", (event) => {
     updateContent();
     processParameters();
     toggleTraining();
-    document.body.classList.toggle('dark-mode');
+    document.body.classList.toggle("dark-mode");
   }
 });
 
-window.onload = function () {};
+window.onload = function () { };

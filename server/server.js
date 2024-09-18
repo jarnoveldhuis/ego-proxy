@@ -415,7 +415,7 @@ async function summarizeTranscript(transcript, context, user, profile) {
     systemContent = `Use the responses by 'you' in this transcript to create a character portrait in 100 words. Include speech patterns. Do not take everything at face value. Look for clues about unspoken traits like a psycho-analyst. Write the summary in the tone of Alan Watts. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves. Only include the prompt, do not include a line labelling it as a prompt. ${revise}`;
   } else if (context === "interview") {
     systemContent = `Use the responses in this transcript to generate a concise summary of ${user}'s professional experience. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves during an interview. Do not use Markdown.${revise}`;
-  } else if (context === "dating") {
+  } else if (context === "date") {
     systemContent = `Use the responses in this transcript to generate a dating profile for ${user}. Do not use Markdown.${revise}`;
   } else if (context === "debate") {
     systemContent = `Use the responses in this transcript to create a profile of ${user}'s beliefs.  Do not use Markdown.${revise}`;
@@ -619,7 +619,7 @@ async function describeImageBase(base64) {
           content: [
             {
               type: "text",
-              text: "You are an author describing a character inspired by this picture. Describe the image as an a children's cartoon to your illustrator. Do not mention facial expressions. The background must be pure black. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
+              text: "You are an author describing a character inspired by this picture. Describe the image as an a children's cartoon to your illustrator. Do not mention facial expressions or anything in the backgroud. The background must be pure black. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
             },
             {
               type: "image_url",
@@ -1060,13 +1060,13 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     sendProgress(ws);
     console.log("Beginning emotion generation...");
 
-    let emotionInstructions = `Render a ${ethnicity} ${genderIdentity} staring straight ahead against a pure black background in an extreme state of`;
+    let emotionInstructions = `I am generating images to represent different emotions and facial expressions. Render a ${ethnicity} ${genderIdentity} staring straight ahead against a pure black background in an extreme state of`;
 
     let speakDescription = `${emotionInstructions} TALKING! MOUTH MUST BE OPEN!`;
 
     let friendlyDescription = `${emotionInstructions} FRIENDLINESS!`;
 
-    let confusedDescription = `${emotionInstructions} CONFUSION!`;
+    let confusedDescription = `${emotionInstructions} CONFUSION! SCRATCHING HEAD!`;
 
     let joyDescription = `${emotionInstructions} JOY AND LAUGHTER!`;
 
@@ -1078,9 +1078,9 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
 
     let afraidDescription = `${emotionInstructions} FEAR!`;
 
-    let embarassedDescription = `${emotionInstructions} EMBARASSMENT!`;
+    let embarassedDescription = `${emotionInstructions} EMBARASSMENT! Must be blushing!`;
 
-    let intriguedDescription = `${emotionInstructions} INTRIGUED! HAND ON THEIR CHIN!`;
+    let intriguedDescription = `${emotionInstructions} INTRIGUE! HAND ON THEIR CHIN!`;
 
     // Prompt Array for Each Emotion
     let subsequentPrompts = [
