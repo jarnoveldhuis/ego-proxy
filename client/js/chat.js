@@ -742,7 +742,6 @@ function getHosts(currentSpeaker) {
 }
 
 function updateContext() {
-  
   var context = document.getElementById("contextSelect").value;
   selectProxyBasedOnContext(context);
   document.getElementById("interviewModal").style.display =
@@ -755,7 +754,7 @@ function updateContext() {
   const saveButton = document.getElementById("save");
 
   saveButton.disabled = true;
-  
+
   // document.getElementById("save").innerText = "Save" + " " + contentId;
   // document.getElementById('meetModal').style.display = context === 'meet' ? 'block' : 'none';
 }
@@ -771,12 +770,11 @@ function updateContext() {
 // }
 let originalContent;
 function updateContent() {
-  
   var successMessage = document.getElementById("contextUpdated");
   const selectElement = document.getElementById("contextSelect");
   const contentId = selectElement.value.toLowerCase(); // 'small talk', 'interview', 'date', 'debate'
   const contentName = proxies[Object.keys(proxies)[0]][contentId + "Prompt"];
-  
+
   // Content Name
   const yourName = proxies[Object.keys(proxies)[0]][contentId + "Name"];
 
@@ -832,8 +830,9 @@ function updateContent() {
 
   // document.getElementById("contextDescription").innerText = proxies[Object.keys(proxies)[0]][contentId+"Instructions"];
 
-  document.getElementById("shareDescription").innerText = `Copy the custom URL and let others interact with ` + proxyName+'.';
-    // proxies[Object.keys(proxies)[0]][contentId + "Instructions"];
+  document.getElementById("shareDescription").innerText =
+    `Copy the custom URL and let others interact with ` + proxyName + ".";
+  // proxies[Object.keys(proxies)[0]][contentId + "Instructions"];
 
   // document.getElementById("begin").innerText =
   //   selectElement.value + " " + proxyName;
@@ -987,22 +986,30 @@ function begin(transcript) {
 
 function copyUrl() {
   var urlInput = document.getElementById("urlInput");
-  urlInput.select();
-  document.execCommand("copy");
 
-  // Initialize the tooltip
-  var urlCopyButton = document.getElementById("urlCopy");
-  var tooltip = new bootstrap.Tooltip(urlCopyButton);
+  // Use the Clipboard API to copy the URL
+  navigator.clipboard
+    .writeText(urlInput.value)
+    .then(function () {
+      // Initialize the tooltip
+      var urlCopyButton = document.getElementById("urlCopy");
+      var tooltip = new bootstrap.Tooltip(urlCopyButton);
 
-  // Show the tooltip
-  tooltip.show();
+      // Update the tooltip title
+      urlCopyButton.setAttribute("data-bs-original-title", "Copied!");
+      // Show the tooltip
+      tooltip.show();
 
-  // Hide the tooltip after 2 seconds and reset the title
-  setTimeout(function () {
-    tooltip.hide();
-    // tooltip.dispose();
-    urlCopyButton.setAttribute("data-bs-original-title", "Copied!");
-  }, 2000);
+      // Hide the tooltip after 2 seconds and reset the title
+      setTimeout(function () {
+        urlCopyButton.setAttribute("data-bs-original-title", "");
+
+        tooltip.hide();
+      }, 1000);
+    })
+    .catch(function (err) {
+      console.error("Failed to copy: ", err);
+    });
 }
 
 function beginTraining() {
@@ -1346,7 +1353,7 @@ function extractName(userMessage) {
 function decodeAndEncode(value) {
   try {
     value = decodeURIComponent(value);
-  } catch (e) { }
+  } catch (e) {}
   return encodeURIComponent(value);
 }
 
@@ -1378,30 +1385,32 @@ function alpha(e) {
 function selectProxyBasedOnContext(context) {
   // Define a mapping between context values and checkbox values
   const contextToProxyMap = {
-    "Interview": "Amy",
-    "Debate": "Donnie",
-    "Date": "Avery",
-    "Meet": "Shadow",
+    Interview: "Amy",
+    Debate: "Donnie",
+    Date: "Avery",
+    Meet: "Shadow",
     // Add more mappings as needed
   };
 
-    // Deselect all checkboxes
-    const allCheckboxes = document.querySelectorAll("input.form-check-input");
-    allCheckboxes.forEach(checkbox => {
-      checkbox.checked = false;
-    });
+  // Deselect all checkboxes
+  const allCheckboxes = document.querySelectorAll("input.form-check-input");
+  allCheckboxes.forEach((checkbox) => {
+    checkbox.checked = false;
+  });
 
   // Get the checkbox value corresponding to the context
   const checkboxValue = contextToProxyMap[context];
 
   if (checkboxValue) {
     // Find the checkbox with the corresponding value
-    const checkbox = document.querySelector(`input.form-check-input[value="${checkboxValue}"]`);
+    const checkbox = document.querySelector(
+      `input.form-check-input[value="${checkboxValue}"]`
+    );
     if (checkbox) {
       // Select the checkbox
       checkbox.checked = true;
       // Optionally, trigger the change event to update the URL
-      checkbox.dispatchEvent(new Event('change'));
+      checkbox.dispatchEvent(new Event("change"));
     }
   }
 }
@@ -1451,7 +1460,6 @@ function updateUrl(context) {
     })
   );
 
-
   // Remove any existing "guest" parameter to ensure it's replaced
   params.delete("guest");
 
@@ -1461,7 +1469,8 @@ function updateUrl(context) {
     proxyInput.value = guestDisplay;
     params.append("guest", Array.from(guestNamesSet).join(","));
   }
-  let practiceContext= document.getElementById("practiceContext");
+
+  let practiceContext = document.getElementById("practiceContext");
   switch (context) {
     case "interview":
       practiceContext.innerText = "Practice Interview";
@@ -1481,10 +1490,10 @@ function updateUrl(context) {
       // Add any specific parameters for the "date" context here
       break;
 
-      case "meet":
-        practiceContext.innerText = "Practice Meeting:";
-        // Add any specific parameters for the "date" context here
-        break;
+    case "meet":
+      practiceContext.innerText = "Practice Meeting:";
+      // Add any specific parameters for the "date" context here
+      break;
 
     case "debate":
       practiceContext.innerText = "Practice Debate:";
@@ -1496,9 +1505,6 @@ function updateUrl(context) {
   }
 
   // Function to select the checkbox based on selectedContext
-  
-
-
 
   if (isTtsEnabled) {
     params.append("voice", "true");
@@ -1523,13 +1529,29 @@ function updateUrl(context) {
     console.log("New URL:", newUrl);
 
     var queryString = params.toString().replace(/\+/g, " ");
+    console.log("Query String:", queryString);
+
     if (queryString) {
       regularUrl = newUrl + "?" + queryString;
     } else {
       regularUrl = newUrl;
     }
 
-    shareUrl = newUrl + "?" + queryString + "&share";
+    // Create a new URLSearchParams object without the 'guest' parameters
+    var paramsWithoutGuests = new URLSearchParams();
+    params.forEach((value, key) => {
+      if (key !== "guest") {
+        paramsWithoutGuests.append(key, value);
+      }
+    });
+
+    // Convert the paramsWithoutGuests to a query string
+    var queryStringWithoutGuests = paramsWithoutGuests
+      .toString()
+      .replace(/\+/g, " ");
+    console.log("Query String Without Guests:", queryStringWithoutGuests);
+
+    shareUrl = newUrl + "?" + queryStringWithoutGuests + "&share";
     trainingUrl = newUrl + "?training=true&" + queryString;
     document.getElementById("urlInput").value = shareUrl;
   }
@@ -1707,7 +1729,6 @@ document.getElementById("userInput").addEventListener("input", function () {
     toggleResponseContainer();
   }
   if (response) {
-    console.log("Response:", response);
     document.getElementById("prompt").textContent = response;
   }
   let submitButtons = document.querySelectorAll('input[type="submit"]');
@@ -1736,7 +1757,7 @@ document
     e.preventDefault();
 
     var feedback = document.getElementById("feedbackText").value;
-
+    console.log("Feedback:", feedback);
     fetch("/send-feedback", {
       method: "POST",
       headers: {
@@ -1751,6 +1772,7 @@ document
         return response.json();
       })
       .then((data) => {
+        console.log("Response data:", data);
         feedbackModal.hide();
 
         document.getElementById("feedbackForm").reset();
@@ -1759,7 +1781,6 @@ document
         console.error("Error:", error);
       });
   });
-
 
 document.addEventListener("DOMContentLoaded", (event) => {
   submitButton = document.querySelector('.btn-group input[type="submit"]');
@@ -1776,18 +1797,17 @@ document.addEventListener("DOMContentLoaded", (event) => {
     settingsModal = new bootstrap.Modal(
       document.getElementById("settingsModal")
     );
-    document.getElementById("proxySelect").addEventListener("change", function () {
-      
-      const selectedValue = this.value;
-      if (selectedValue === "createNewProxy") {
-        // Open the "Create New Proxy" link in a new tab
-        window.open(createProxyLink.href, "_blank");
-        console.log(createProxyLink.href)
-        // Optionally, reset the dropdown to the first option
-        this.selectedIndex = 0;
-      }
-    });
-
+    document
+      .getElementById("proxySelect")
+      .addEventListener("change", function () {
+        const selectedValue = this.value;
+        if (selectedValue === "createNewProxy") {
+          // Open the "Create New Proxy" link in a new tab
+          window.open(createProxyLink.href, "_blank");
+          // Optionally, reset the dropdown to the first option
+          this.selectedIndex = 0;
+        }
+      });
   }
   const inputElement = document.getElementById("userInput");
   const imageElement = document.getElementById("botImage");
@@ -1958,4 +1978,4 @@ document.addEventListener("DOMContentLoaded", (event) => {
   }
 });
 
-window.onload = function () { };
+window.onload = function () {};

@@ -27,6 +27,7 @@ const ELEVENLABS_API_ENDPOINT =
   "https://api.elevenlabs.io/v1/text-to-speech/GBv7mTt0atIp3Br8iCZE";
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
 const [email, password] = process.env.EMAIL_CREDENTIALS.split(":");
+console.log("Email:", email); 
 const HEADERS = {
   Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
   "Content-Type": "application/json",
@@ -186,9 +187,7 @@ app.get("/:siteId", async (req, res) => {
       return result;
     }, {});
     updateContextMessages(siteId, subdomain, lowerCaseProxies, data);
-    console.log("updatedContextMessages...");
     cleanDataForPublic(data); // Prepare data for public use by removing sensitive info
-    console.log("rendering chat");
     res.render("chat", data); // Render template with cleaned data
   } catch (err) {
     console.error(err.message);
@@ -328,7 +327,7 @@ ${storyProgress}`;
       const freshUserMessage = `${userMessage}${context.message}`;
       // Process and send response
       const payload = createPayload(systemMessage, freshUserMessage);
-      console.log("Payload:", payload);
+      // console.log("Payload:", payload);
       console.log("Getting assistant response...");
       const assistantMessage = await getAssistantResponse(payload);
       // calculateAndLogCost(userMessage, assistantMessage);
@@ -371,7 +370,7 @@ ${storyProgress}`;
       systemMessage + storyProgress + previousProxyProfile,
       userMessage + transcript
     );
-    console.log(payload)
+    // console.log(payload)
     const assistantMessage = await getAssistantResponse(payload);
     res.send({ answer: assistantMessage });
   }
@@ -420,13 +419,15 @@ async function summarizeTranscript(transcript, context, user, profile) {
   } else if (context === "debate") {
     systemContent = `Use the responses in this transcript to create a profile of ${user}'s beliefs.  Do not use Markdown.${revise}`;
   }
-  console.log("systemContent:", systemContent);
+  // console.log("systemContent:", systemContent);
   return await generateContent(transcript, context, systemContent);
 }
 
 // Feedback Route
 app.post("/send-feedback", (req, res) => {
   const { feedback } = req.body;
+  console.log("Feedback:", feedback);
+  console.log("Email:", email);
 
   const mailOptions = {
     from: `"Ego-Proxy" <${email}>`,
@@ -437,8 +438,8 @@ app.post("/send-feedback", (req, res) => {
 
   transporter.sendMail(mailOptions, function (error, info) {
     if (error) {
-      console.log(error);
-      res.status(500).json({ message: "Error sending email" });
+      console.error("Error sending email:", error);
+      res.status(500).json({ message: "Error sending email", error: error.message });
     } else {
       console.log("Email sent: " + info.response);
       res.status(200).json({ message: "Feedback sent successfully" });
@@ -526,7 +527,7 @@ app.post("/create-proxy", upload.single("file"), async (req, res) => {
   const proxyName = req.body.proxyName;
   genderIdentity = req.body.genderIdentity;
   const ethnicity = req.body.ethnicity !== "Other" ? req.body.ethnicity : req.body.otherEthnicity;
-  console.log("ethnicity", ethnicity)
+  // console.log("ethnicity", ethnicity)
   let nameExists;
   try {
     nameExists = await checkNameExists(proxyName);
@@ -971,6 +972,67 @@ function checkNameExists(name) {
   });
 }
 
+async function sendMail(emotions, proxyEmail, proxyName, domain) {
+  console.log(emotions.joyUrl)
+  return new Promise((resolve, reject) => {
+    try {
+      console.log("Sending email...");
+
+      const mailOptions = {
+        from: `"Ego-Proxy" <${email}>`,
+        to: `${proxyEmail}`, // List of recipients
+        subject: "Proxy Created: " + proxyName,
+        html: `
+          <p>Meet your proxy:</p>
+          <p>Name: ${proxyName}</p>
+          <p>
+            <a href='https://${proxyName}.${domain}/meet'>
+              <img src="cid:image@cid" style="max-width: 300px;" alt="Proxy Image" />
+            </a>
+          </p>
+          <p><a href='https://${proxyName}.${domain}/meet'>Click here</a> to train your proxy to emulate you.
+          </p>
+          </p>
+        `,
+        attachments: [
+          {
+            filename: "image.jpg",
+            path: emotions.joyUrl,
+            cid: "image@cid", //same cid value as in the html img src
+          },
+        ],
+      };
+
+      transporter.sendMail(mailOptions, function (error, info) {
+        if (error) {
+          console.error("Error sending email:", error);
+          reject(new Error("Error sending email: " + error.message));
+        } else {
+          console.log("Email sent: " + info.response);
+          resolve("Proxy Created");
+        }
+      });
+    } catch (error) {
+      console.error("Error in sendMail function:", error);
+      reject(new Error("Error in sendMail function: " + error.message));
+    }
+  });
+}
+
+// Updated route handler function
+function handleSendMail(req, res) {
+  const emotions = req.body.emotions; // Assuming emotions are passed in the request body
+  const { proxyEmail, proxyName, domain } = req.body; // Add any other necessary fields
+
+  sendMail(emotions, proxyEmail, proxyName, domain)
+    .then((message) => {
+      res.status(200).json({ message });
+    })
+    .catch((error) => {
+      res.status(500).json({ message: error.message });
+    });
+}
+
 async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
   console.log("Creating proxy...");
   let { proxyName, genderIdentity, proxyEmail } = req.body;
@@ -1153,7 +1215,7 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
           console.warn(`No case for index ${index}`);
       }
     };
-    console.log("subsequentPrompts:", subsequentPrompts); 
+    // console.log("subsequentPrompts:", subsequentPrompts); 
     // Create an array of promises for the axios requests
     const requests = subsequentPrompts.map((prompt, index) =>
       axios
@@ -1204,6 +1266,7 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
         throw err;
       });
 
+      await sendMail(emotions, proxyEmail, proxyName, domain);
     // Add images to Airtable
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ event: "complete", proxyName: proxyName }));
@@ -1215,67 +1278,10 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     throw new Error("Error updating Airtable"); // Rethrow or create a new error
   }
 
-  async function sendMail(emotions, proxyEmail, proxyName, domain) {
-    return new Promise((resolve, reject) => {
-      try {
-        console.log("Sending email...");
+  
 
-        const mailOptions = {
-          from: `"Ego-Proxy" <${email}>`,
-          to: `${proxyEmail}`, // List of recipients
-          subject: "Proxy Created: " + proxyName,
-          html: `
-            <p>Meet your proxy:</p>
-            <p>Name: ${proxyName}</p>
-            <p>
-              <a href='https://${proxyName}.${domain}/meet'>
-                <img src="cid:image@cid" style="max-width: 300px;" alt="Proxy Image" />
-              </a>
-            </p>
-            <p><a href='https://${proxyName}.${domain}/meet'>Click here</a> to train your proxy to emulate you.
-            </p>
-            <p>Once trained, you can access its profile <a href='https://${proxyName}.${domain}'>here</a>.
-            </p>
-          `,
-          attachments: [
-            {
-              filename: "image.jpg",
-              path: emotions.joyUrl,
-              cid: "image@cid", //same cid value as in the html img src
-            },
-          ],
-        };
-
-        transporter.sendMail(mailOptions, function (error, info) {
-          if (error) {
-            console.error("Error sending email:", error);
-            reject(new Error("Error sending email: " + error.message));
-          } else {
-            console.log("Email sent: " + info.response);
-            resolve("Proxy Created");
-          }
-        });
-      } catch (error) {
-        console.error("Error in sendMail function:", error);
-        reject(new Error("Error in sendMail function: " + error.message));
-      }
-    });
-  }
-
-  // Updated route handler function
-  function handleSendMail(req, res) {
-    const emotions = req.body.emotions; // Assuming emotions are passed in the request body
-    const { proxyEmail, proxyName, domain } = req.body; // Add any other necessary fields
-
-    sendMail(emotions, proxyEmail, proxyName, domain)
-      .then((message) => {
-        res.status(200).json({ message });
-      })
-      .catch((error) => {
-        res.status(500).json({ message: error.message });
-      });
-  }
+  
 
   // Route to send mail
-  app.post("/send-mail", handleSendMail);
+  // app.post("/send-mail", handleSendMail);
 }

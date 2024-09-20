@@ -128,47 +128,52 @@
   <!-- Success Alert -->
 
   <% if (context.alias !== "CT" ) { %>
+    
   <!-- Settings Modal -->
   <div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="hide" data-bs-backdrop="static" aria-hidden="true">
     <div class="modal-dialog">
       <div class="modal-content">
-        <div class="modal-header">
-          <h4 class="col-6"><%= Object.keys(proxies)[0] %>'s Settings</h4>
-          <div class="col-6">
-            <div class="input-group input-group mb-3">
-              <span class="input-group-text" id="basic-addon2">Context:</span>
-              <select class="form-select custom-select" id="contextSelect" onchange="updateContext(); updateUrl(this.value.toLowerCase().toString())">
+        <!-- Modal Header -->
+          <div class="modal-header d-flex justify-content-between align-items-center">
+            <!-- Modal Title -->
+            <h5 class="modal-title mb-0">Settings</h5>
+
+            <!-- Scenario Selector -->
+            <div class="input-group input-group-sm ms-2 mt-2 mt-md-0 scenario-selector " style="width: auto;">
+              <label class="input-group-text" for="contextSelect">Scenario:</label>
+              <select class="form-select" id="contextSelect" onchange="updateContext(); updateUrl(this.value.toLowerCase())">
                 <option value="Settings" disabled>Select...</option>
-                <option value="Meet" selected <% if (context.context === 'meet') { %>selected<% } %>>Meeting</option>
+                <option value="Meet" <% if (context.context === 'Meet') { %>selected<% } %>>Meeting</option>
                 <option value="Interview" <% if (context.context === 'Interview') { %>selected<% } %>>Job Interview</option>
                 <option value="Date" <% if (context.context === 'Date') { %>selected<% } %>>Blind Date</option>
                 <option value="Debate" <% if (context.context === 'Debate') { %>selected<% } %>>Argument</option>
               </select>
             </div>
           </div>
-        </div>
 
 
 
-        <div class="input-group input-group mb-3" style="display: none;">
-          <span class="input-group-text" id="basic-addon2">Proxy:</span>
-          <select class="form-select form-select" id="proxySelect" onchange="updateUrl(document.getElementById('contextSelect').value.toLowerCase())">
-            <option selected><%= Object.keys(proxies)[0] %></option>
-            <optgroup label="Your Other Proxies">
-              <% if (yourProxies.length > 0) { %>
-              <% yourProxies.forEach(function(option) { %>
-              <option value="<%= option %>"><%= option %></option>
-              <% }); %>
-              <% } else { %>
-              <% } %>
-              <option class="dropdown-item" id="createProxyLinkAs" value="createNewProxy"><b>Create New Proxy</a></b></a>
-              </option>
-            </optgroup>
-          </select>
 
-        </div>
-        <!-- Nav tabs -->
-        <!-- <div id="navTabs">
+
+          <div class="input-group input-group mb-3" style="display: none;">
+            <span class="input-group-text" id="basic-addon2">Proxy:</span>
+            <select class="form-select form-select" id="proxySelect" onchange="updateUrl(document.getElementById('contextSelect').value.toLowerCase())">
+              <option selected><%= Object.keys(proxies)[0] %></option>
+              <optgroup label="Your Other Proxies">
+                <% if (yourProxies.length > 0) { %>
+                <% yourProxies.forEach(function(option) { %>
+                <option value="<%= option %>"><%= option %></option>
+                <% }); %>
+                <% } else { %>
+                <% } %>
+                <option class="dropdown-item" id="createProxyLinkAs" value="createNewProxy"><b>Create New Proxy</a></b></a>
+                </option>
+              </optgroup>
+            </select>
+
+          </div>
+          <!-- Nav tabs -->
+          <!-- <div id="navTabs">
           <ul class="nav nav-tabs" id="myTab" role="tablist">
             <li class="nav-item" role="presentation">
               <button class="nav-link active" id="profile-tab" data-bs-toggle="tab" data-bs-target="#profile" type="button" role="tab" aria-controls="profile" aria-selected="false">Profile</button>
@@ -178,41 +183,41 @@
             </li> -->
 
 
-        <!-- <li class="nav-item" role="presentation">
+          <!-- <li class="nav-item" role="presentation">
               <button class="nav-link" id="custom-tab" data-bs-toggle="tab" data-bs-target="#custom" type="button" role="tab" aria-controls="custom" aria-selected="true">Add Proxies</button>
             </li> -->
-        <!-- <li class="nav-item" role="presentation">
+          <!-- <li class="nav-item" role="presentation">
                 <button class="nav-link" id="custom-tab" data-bs-toggle="tab" data-bs-target="#meet" type="button" role="tab" aria-controls="custom" aria-selected="true">Meet</button>
               </li> -->
-        <!-- </div id="navTabs"> -->
+          <!-- </div id="navTabs"> -->
 
-        <div class="modal-body">
-          <form>
+          <div class="modal-body">
+            <form>
 
-            <!-- Profile -->
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <div>
-                <label for="contentField" id="contentId">Profile</label>
-                <br>
-                <small class="form-text text-muted">This information will help inform how <%= Object.keys(proxies)[0]%> behaves.</small>
+              <!-- Profile -->
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div>
+                  <label for="contentField" id="contentId">Profile</label>
+                  <br>
+                  <small class="form-text text-muted">This information will help inform how <%= Object.keys(proxies)[0]%> behaves.</small>
+                </div>
+
+                <div class="d-flex">
+
+                  <button class="btn btn-outline-dark btn-sm ml-2" id="save" disabled onclick="updateProxy(event)">
+                    <i class="fas menuIcon fa-save"></i>
+                  </button>
+                </div>
               </div>
 
-              <div class="d-flex">
-
-                <button class="btn btn-outline-dark btn-sm ml-2" id="save" disabled onclick="updateProxy(event)">
-                  <i class="fas menuIcon fa-save"></i>
-                </button>
-              </div>
-            </div>
-
-            <form id="editForm" action="/update-proxy" method="post">
-              <input type="hidden" id="contentIdField" name="contentId" value="">
-              <div class="mb-3">
-                <textarea class="form-control" id="contentField" name="content" rows="3" placeholder="Click 'Train' below to a practice interview and autogenerate your proxy's profile or just update manually here."></textarea>
-              </div>
-            </form>
-            <!-- <button type="button" class="btn btn-primary" id="train" onclick="tryShare()">Train</button> -->
-            <!-- <div class="modal-footer">
+              <form id="editForm" action="/update-proxy" method="post">
+                <input type="hidden" id="contentIdField" name="contentId" value="">
+                <div class="mb-3">
+                  <textarea class="form-control" id="contentField" name="content" rows="3" placeholder="Click 'Train' below to a practice interview and autogenerate your proxy's profile or just update manually here."></textarea>
+                </div>
+              </form>
+              <!-- <button type="button" class="btn btn-primary" id="train" onclick="tryShare()">Train</button> -->
+              <!-- <div class="modal-footer">
                 <button type="button" class="btn btn-primary" style="display:none" id="meetProxy" onclick="updateProxy(), meet('share')">
                   <%= Object.keys(proxies)[0] %> <%= Object.keys(proxies)[0] %>
                 </button>
@@ -222,20 +227,20 @@
                 <button type="button" class="btn btn-primary" id="trainProxy" data-toggle="tooltip" data-placement="left" title="Tooltip on left" onclick="updateProxy(), train()">
                   Train <%= Object.keys(proxies)[0] %>
                 </button> -->
-            <!-- <small class="text-muted ms-2">Refines your profile with each practice</small> -->
-            <!-- <span class="ms-2" tabindex="0" data-bs-toggle="popover" data-bs-trigger="focus" title="Practice Debates" data-bs-content="Refines your profile with each practice">
+              <!-- <small class="text-muted ms-2">Refines your profile with each practice</small> -->
+              <!-- <span class="ms-2" tabindex="0" data-bs-toggle="popover" data-bs-trigger="focus" title="Practice Debates" data-bs-content="Refines your profile with each practice">
                   <i class="bi bi-info-circle"></i>
                 </span>
               </div> -->
 
 
-            <div id="errorMessage" class="alert alert-danger" role="alert" style="display: none;">
-              Update Failed
-            </div>
+              <div id="errorMessage" class="alert alert-danger" role="alert" style="display: none;">
+                Update Failed
+              </div>
 
-            <!-- Dropdown to select context -->
-            <div id="allContent" style="display: block">
-              <!-- <div class="mb-3">
+              <!-- Dropdown to select context -->
+              <div id="allContent" style="display: block">
+                <!-- <div class="mb-3">
 
                 <label for="contextSelect"><b>Select Context:</b></label></br>
                 <small id="contextDescription" class="form-text text-muted">What situation will <%= Object.keys(proxies)[0] %> be dealing with.</small>
@@ -249,135 +254,135 @@
 
               </div> -->
 
-              <!-- Tab panes -->
-              <div class="tab-content" id="myTabContent">
-                <div id="standardModal">
-                  <div id="interviewModal" style="display: none;">
-                    <div class="form-group row">
-                      <div id='role' class="col">
-                        <label for="roleInput" class="col-form-label col-form-label-sm col" style='font-weight: bold;'><b>Open Role:</b></label>
-                        <div class="input-group input-group-sm mb-3 col">
-                          <input type="text" id="roleInput" class="params form-control" placeholder="Enter role" onkeypress="return alpha(event)" oninput="updateUrl('interview')">
+                <!-- Tab panes -->
+                <div class="tab-content" id="myTabContent">
+                  <div id="standardModal">
+                    <div id="interviewModal" style="display: none;">
+                      <div class="form-group row">
+                        <div id='role' class="col">
+                          <label for="roleInput" class="col-form-label col-form-label-sm col" style='font-weight: bold;'><b>Open Role:</b></label>
+                          <div class="input-group input-group-sm mb-3 col">
+                            <input type="text" id="roleInput" class="params form-control" placeholder="Enter role" onkeypress="return alpha(event)" oninput="updateUrl('interview')">
+                          </div>
                         </div>
-                      </div>
-                      <div id='org' class="col">
-                        <label for="orgInput" class="col-form-label col-form-label-sm" style='font-weight: bold;'><b>Organization:</b></label>
-                        <div class="input-group input-group-sm mb-3">
-                          <input type="text" id="orgInput" class="params form-control" placeholder="Enter org" onkeypress="return alpha(event)" oninput="updateUrl('interview')">
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Date Fields -->
-                  <div id="dateModal" style="display: none;">
-                  </div>
-
-                  <!-- Debate Fields -->
-                  <div id="debateModal" style="display: none;">
-                    <div id='topic' class="form-group row">
-                      <div class="col">
-                        <div class="input-group-sm">
-                          <label for="topicInput" class="col-form-label col-form-label-sm col" style='font-weight: bold;'><b>Topic:</b></label>
-
-                          <div class="input-group-sm input-group-sm mb-3">
-                            <input type="text" id="topicInput" class="params form-control" placeholder="Enter topic" onkeypress="return alpha(event)" oninput="updateUrl('debate')">
+                        <div id='org' class="col">
+                          <label for="orgInput" class="col-form-label col-form-label-sm" style='font-weight: bold;'><b>Organization:</b></label>
+                          <div class="input-group input-group-sm mb-3">
+                            <input type="text" id="orgInput" class="params form-control" placeholder="Enter org" onkeypress="return alpha(event)" oninput="updateUrl('interview')">
                           </div>
                         </div>
                       </div>
-                      <div class="dropdown col">
-
-                      </div>
                     </div>
 
-                  </div>
-                  <div class="form-group row">
-                    <div class="input-group input-group-sm mb-3" id="name">
-                      <div>
-                        <label for="nameInput" id="practiceContext" style="font-weight: bold;"><b>Practice :</b></label>
-                        <br>
-                        <small id="practiceDescription" class="form-text text-muted">Interact with other proxies as <%= Object.keys(proxies)[0] %> and refine your profile in the process.</small>
-                      </div>
-                      <div class="input-group input-group-sm mb-3" id="nameInputContainer">
-                        <div class="input-group-prepend">
-                          <span class="input-group-text" id="proxyName">Meet</span>
+                    <!-- Date Fields -->
+                    <div id="dateModal" style="display: none;">
+                    </div>
+
+                    <!-- Debate Fields -->
+                    <div id="debateModal" style="display: none;">
+                      <div id='topic' class="form-group row">
+                        <div class="col">
+                          <div class="input-group-sm">
+                            <label for="topicInput" class="col-form-label col-form-label-sm col" style='font-weight: bold;'><b>Topic:</b></label>
+
+                            <div class="input-group-sm input-group-sm mb-3">
+                              <input type="text" id="topicInput" class="params form-control" placeholder="Enter topic" onkeypress="return alpha(event)" oninput="updateUrl('debate')">
+                            </div>
+                          </div>
                         </div>
-                        <input type="text" id="proxyInput" class="form-control col-md-8" readonly>
-                        <div class="dropdown">
-                          <button class="btn btn-outline-dark dropdown-toggle dropdown-toggle-split" type="button" id="addProxySelect" data-bs-toggle="dropdown" aria-expanded="false">
-                            <span class="sr-only">Toggle Dropdown</span>
-                          </button>
-                          <ul class="dropdown-menu" id="addProxyDropdown" aria-labelledby="addProxySelect">
-                            <!-- <li>
+                        <div class="dropdown col">
+
+                        </div>
+                      </div>
+
+                    </div>
+                    <div class="form-group row">
+                      <div class="input-group input-group-sm mb-3" id="name">
+                        <div>
+                          <label for="nameInput" id="practiceContext" style="font-weight: bold;"><b>Practice :</b></label>
+                          <br>
+                          <small id="practiceDescription" class="form-text text-muted">Interact with other proxies as <%= Object.keys(proxies)[0] %> and refine your profile in the process.</small>
+                        </div>
+                        <div class="input-group input-group-sm mb-3" id="nameInputContainer">
+                          <div class="input-group-prepend">
+                            <span class="input-group-text" id="proxyName">Meet</span>
+                          </div>
+                          <input type="text" id="proxyInput" class="form-control col-md-8" readonly>
+                          <div class="dropdown">
+                            <button class="btn btn-outline-dark dropdown-toggle dropdown-toggle-split" type="button" id="addProxySelect" data-bs-toggle="dropdown" aria-expanded="false">
+                              <span class="sr-only">Toggle Dropdown</span>
+                            </button>
+                            <ul class="dropdown-menu" id="addProxyDropdown" aria-labelledby="addProxySelect">
+                              <!-- <li>
                             <label class="dropdown-item">
                               <input type="checkbox" class="form-check-input" value="<%= Object.keys(proxies)[0] %>"> <%= Object.keys(proxies)[0] %>
                             </label>
                           </li> -->
-                            <li>
-                              <h6 class="dropdown-header">Public Proxies</h6>
-                            </li>
-                            <% if (publicProxies.length > 0) { %>
-                            <% publicProxies.forEach(function(option) { %>
-                            <li>
-                              <label class="dropdown-item">
-                                <input type="checkbox" class="form-check-input" value="<%= option %>" onchange="updateUrl(document.getElementById('contextSelect').value.toLowerCase())"> <%= option %>
-                              </label>
-                            </li>
-                            <% }); %>
-                            <% } else { %>
-                            <!-- <li>
+                              <li>
+                                <h6 class="dropdown-header">Public Proxies</h6>
+                              </li>
+                              <% if (publicProxies.length > 0) { %>
+                              <% publicProxies.forEach(function(option) { %>
+                              <li>
+                                <label class="dropdown-item">
+                                  <input type="checkbox" class="form-check-input" value="<%= option %>" onchange="updateUrl(document.getElementById('contextSelect').value.toLowerCase())"> <%= option %>
+                                </label>
+                              </li>
+                              <% }); %>
+                              <% } else { %>
+                              <!-- <li>
                             <label class="dropdown-item" disabled>None Available</label>
                           </li> -->
-                            <% } %>
-                            <% if (yourProxies.length > 0) { %>
-                            <li>
-                              <h6 class="dropdown-header">Your Other Proxies</h6>
-                            </li>
+                              <% } %>
+                              <% if (yourProxies.length > 0) { %>
+                              <li>
+                                <h6 class="dropdown-header">Your Other Proxies</h6>
+                              </li>
 
-                            <% yourProxies.forEach(function(option) { %>
-                            <li>
-                              <label class="dropdown-item">
-                                <input type="checkbox" class="form-check-input" value="<%= option %>" onchange="updateUrl(document.getElementById('contextSelect').value.toLowerCase())"> <%= option %>
-                              </label>
-                            </li>
-                            <% }); %>
-                            <% } %>
+                              <% yourProxies.forEach(function(option) { %>
+                              <li>
+                                <label class="dropdown-item">
+                                  <input type="checkbox" class="form-check-input" value="<%= option %>" onchange="updateUrl(document.getElementById('contextSelect').value.toLowerCase())"> <%= option %>
+                                </label>
+                              </li>
+                              <% }); %>
+                              <% } %>
 
-                            <li>
-                              <a class="dropdown-item" id="createProxyLink" href="#" target="_blank"><b>Create New Proxy</a></b></a>
-                            </li>
-                          </ul>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-dark" id="meetProxy" onclick="redirectToUrl(regularUrl)">
-                          Begin
-                        </button>
+                              <li>
+                                <a class="dropdown-item" id="createProxyLink" href="#" target="_blank"><b>Create New Proxy</a></b></a>
+                              </li>
+                            </ul>
+                          </div>
+                          <button type="button" class="btn btn-sm btn-dark" id="meetProxy" onclick="redirectToUrl(regularUrl)">
+                            Begin
+                          </button>
 
 
-                        <!-- Hidden text input field -->
-                        <!-- <div id="customProxyInput" style="display: none; margin-top: 10px;">
+                          <!-- Hidden text input field -->
+                          <!-- <div id="customProxyInput" style="display: none; margin-top: 10px;">
                         <input type="text" class="form-control form-control-sm" id="customProxy" placeholder="Enter custom proxy">
                       </div> -->
+
+                        </div>
+
 
                       </div>
 
 
                     </div>
 
+                    <!-- Conditional Fields -->
+                    <!-- Interview Fields -->
 
                   </div>
 
-                  <!-- Conditional Fields -->
-                  <!-- Interview Fields -->
-
-                </div>
-
-                <!-- Training Field -->
-                <!-- <div id='trainer' class="form-group row">
+                  <!-- Training Field -->
+                  <!-- <div id='trainer' class="form-group row">
                 <div class="input-group mb-3">
                   <div class="input-group-prepend">
                     <span class="input-group-text" id="trainingContext">Practice:</span>
                   </div> -->
-                <!-- <select class="custom-select" id="proxySelect" onchange="updateUrl(document.getElementById('contextSelect').value.toLowerCase())">
+                  <!-- <select class="custom-select" id="proxySelect" onchange="updateUrl(document.getElementById('contextSelect').value.toLowerCase())">
                     <optgroup label="Public Proxies">
                       <% if (publicProxies.length > 0) { %>
                       <% publicProxies.forEach(function(option) { %>
@@ -397,7 +402,7 @@
                       <% } %>
                     </optgroup>
                   </select> -->
-                <!-- <div class="input-group-append">
+                  <!-- <div class="input-group-append">
 
                     <span class="input-group-text" id="trainProxy" data-toggle="tooltip" data-placement="left" title="Tooltip on left" onclick="updateProxy(), train()">
                       as <%= Object.keys(proxies)[0] %>
@@ -407,15 +412,15 @@
 
                 </div>
               </div> -->
-                <!-- Share Tab -->
-                <!-- <div class="tab-pane fade " id="share" role="tabpanel" aria-labelledby="share-tab"> -->
+                  <!-- Share Tab -->
+                  <!-- <div class="tab-pane fade " id="share" role="tabpanel" aria-labelledby="share-tab"> -->
 
 
-                <!-- Dependent Fields -->
+                  <!-- Dependent Fields -->
 
 
-                <!-- Name Fields -->
-                <!-- <div id='name' class="form-group row">
+                  <!-- Name Fields -->
+                  <!-- <div id='name' class="form-group row">
                   <div class="col">
                     <div class="input-group-sm">
                       <label id='yourName' class="col col-form-label col-form-label-sm col" style='font-weight: bold;'><b>Who will this proxy speak with?</b></label>
@@ -429,16 +434,16 @@
 
                   </div> -->
 
-                <!-- Standard Fields -->
+                  <!-- Standard Fields -->
 
 
-                <div id='guests' class="col-4">
-                  <!-- <label for="dropdownMenuButton" id="simulate" class="col-form-label" style='font-weight: bold;'>Guests:</label><br> -->
+                  <div id='guests' class="col-4">
+                    <!-- <label for="dropdownMenuButton" id="simulate" class="col-form-label" style='font-weight: bold;'>Guests:</label><br> -->
 
 
-                  <div role="group" aria-label="Basic checkbox toggle button group" id="hostButtons">
+                    <div role="group" aria-label="Basic checkbox toggle button group" id="hostButtons">
 
-                    <!-- <button class="btn btn-sm btn-outline-dark dropdown-toggle dropdown-toggle-split" type="button" id="addProxyDropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                      <!-- <button class="btn btn-sm btn-outline-dark dropdown-toggle dropdown-toggle-split" type="button" id="addProxyDropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                     Add Guests
                   </button>
                   <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
@@ -467,7 +472,7 @@
                   </div> -->
 
 
-                    <!-- <button type="button" class="btn btn-outline-primary" id="beginTraining" data-toggle="tooltip" data-placement="left" title="Tooltip on left" onclick="train()">
+                      <!-- <button type="button" class="btn btn-outline-primary" id="beginTraining" data-toggle="tooltip" data-placement="left" title="Tooltip on left" onclick="train()">
                     Train <%= Object.keys(proxies)[0] %>
                   </button>
 
@@ -476,98 +481,98 @@
                   <span class="ms-2" tabindex="0" data-bs-toggle="popover" data-bs-trigger="focus" title="Practice Debates" data-bs-content="Refines your profile with each practice">
                     <i class="bi bi-info-circle"></i>
                   </span> -->
-                  </div>
+                    </div>
 
-                </div>
-                <!-- <button class="btn btn-sm btn-outline-primary dropdown-toggle dropdown-toggle-split" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                  </div>
+                  <!-- <button class="btn btn-sm btn-outline-primary dropdown-toggle dropdown-toggle-split" type="button" id="dropdownMenuButton" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                 Add Guest
               </button> -->
 
 
 
-                <!-- Shareable Fields -->
+                  <!-- Shareable Fields -->
 
 
 
 
 
-                <!-- <button type="button" class="btn btn-primary" style="display:none" id="meetProxy" onclick="updateProxy(), meet('share')">
+                  <!-- <button type="button" class="btn btn-primary" style="display:none" id="meetProxy" onclick="updateProxy(), meet('share')">
                   <%= Object.keys(proxies)[0] %> <%= Object.keys(proxies)[0] %>
                 </button> -->
 
 
 
-                <!-- <button type="button" class="btn btn-primary" id="begin" onclick="redirectToUrl(regularUrl)">Meet <%= Object.keys(proxies)[0] %></button>
+                  <!-- <button type="button" class="btn btn-primary" id="begin" onclick="redirectToUrl(regularUrl)">Meet <%= Object.keys(proxies)[0] %></button>
                   <button type="button" class="btn btn-primary" style="display:none" id="backToProfile" onclick="backToProfile()">Cancel</button> -->
 
 
 
 
-                <!-- <button type="button" class="btn btn-primary" id="begin" onclick="redirectToUrl(regularUrl)">Meet <%= Object.keys(proxies)[0] %></button>
+                  <!-- <button type="button" class="btn btn-primary" id="begin" onclick="redirectToUrl(regularUrl)">Meet <%= Object.keys(proxies)[0] %></button>
                   <button type="button" class="btn btn-primary" style="display:none" id="backToProfile" onclick="backToProfile()">Cancel</button> -->
 
-                <!-- <div id='url'><b>Shareable URL:</b></div>
+                  <!-- <div id='url'><b>Shareable URL:</b></div>
                 <div class="input-group url input-group-sm mb-3">
                   <input type="text" id="urlInput" class="form-control col-10" readonly>
                   <button type="button" id="urlCopy" onclick="copyUrl()" class="btn btn-outline-primary" data-bs-toggle="tooltip" data-bs-placement="top" title="Copied!">Copy</button>
                 </div> -->
-                <!-- </div> -->
+                  <!-- </div> -->
 
-                <!---Profile Tab-->
-                <!-- <div class="tab-pane fade  active show" id="profile" role="tabpanel"   aria-labelledby="profile-tab"> -->
-                <!-- Content Field -->
-                <!-- <button type="button" class="btn btn-primary btn-sm" id="save" disabled onclick="updateProxy()"></button> -->
+                  <!---Profile Tab-->
+                  <!-- <div class="tab-pane fade  active show" id="profile" role="tabpanel"   aria-labelledby="profile-tab"> -->
+                  <!-- Content Field -->
+                  <!-- <button type="button" class="btn btn-primary btn-sm" id="save" disabled onclick="updateProxy()"></button> -->
 
 
-                <!-- </div> -->
+                  <!-- </div> -->
 
-                <div id="proxyCreated" class="alert alert-success" role="alert" style="display: none;">
-                  <div id='Intro'>
-                    <%= training ? 'Meet ' + Object.keys(proxies)[0]  +'!' : "Your proxy's Avatar has been generated! It's time to train " + Object.keys(proxies)[0]  + " to inhabit it's new identity." %>
+                  <div id="proxyCreated" class="alert alert-success" role="alert" style="display: none;">
+                    <div id='Intro'>
+                      <%= training ? 'Meet ' + Object.keys(proxies)[0]  +'!' : "Your proxy's Avatar has been generated! It's time to train " + Object.keys(proxies)[0]  + " to inhabit it's new identity." %>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label for="nameInput" id="url" style="font-weight: bold;"><b>Share:</b></label>
-                  <br>
-                  <small id="shareDescription" class="form-text text-muted"></small>
+                  <div>
+                    <label for="nameInput" id="url" style="font-weight: bold;"><b>Share:</b></label>
+                    <br>
+                    <small id="shareDescription" class="form-text text-muted"></small>
 
-                </div>
-
-
-                <div class="input-group input-group-sm mb-3" id="nameInputContainer">
-                  <div class="input-group-prepend">
-                    <span class="input-group-text" id='yourName'>Meet</span>
                   </div>
-                  <input type="text" id="nameInput" class=" form-control col-md-auto" placeholder="Enter name" fponkeypress="return alpha(event)" oninput="updateUrl(context.context.toLowerCase())" pattern="[A-Za-z\s]+" title="Only letters and spaces are allowed">
-                  <input type="text" id="urlInput" class="form-control col-md-8" readonly style="display: none;">
-                  <button type="button" id="urlCopy" onclick="copyUrl()" class="btn btn-outline-dark" data-bs-toggle="tooltip" data-bs-placement="top" title="Copied!">Copy</button>
-                  <button type="button" class="btn btn-dark" id="testProxy" disabled onclick="testUrl(shareUrl, '_blank')">Test</button>
+
+
+                  <div class="input-group input-group-sm mb-3" id="nameInputContainer">
+                    <div class="input-group-prepend">
+                      <span class="input-group-text" id='yourName'>Meet</span>
+                    </div>
+                    <input type="text" id="nameInput" class=" form-control col-md-auto" placeholder="Enter name" fponkeypress="return alpha(event)" oninput="updateUrl(context.context.toLowerCase())" pattern="[A-Za-z\s]+" title="Only letters and spaces are allowed">
+                    <input type="text" id="urlInput" class="form-control col-md-8" readonly style="display: none;">
+                    <button type="button" id="urlCopy" onclick="copyUrl()" class="btn btn-outline-dark" data-bs-toggle="tooltip" data-bs-placement="top" title="Copied!">Copy</button>
+                    <button type="button" class="btn btn-dark" id="testProxy" disabled onclick="testUrl(shareUrl, '_blank')">Test</button>
+                  </div>
                 </div>
               </div>
-            </div>
+          </div>
         </div>
+
+        <div class='links'>
+        </div>
+        </form>
+
       </div>
+      <div id="contextUpdated" class="alert alert-success alert-dismissible fade" role="alert" style="display: none;">
+        <h4 class="alert-heading">Personality Updated!</h4>
+        <hr> Use this menu to:
 
-      <div class='links'>
+
+        <p class="mb-0">
+        <ul>
+          <li>Review and refine <%= Object.keys(proxies)[0] %>'s personality.</li>
+          <li>Create custom shareable links.</li>
+          <li>Train <%= Object.keys(proxies)[0] %> to interact on your behalf in other contexts.</li>
+        </ul>
+        Click the cog icon to access this menu when you need it.</p>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
       </div>
-      </form>
-
     </div>
-    <div id="contextUpdated" class="alert alert-success alert-dismissible fade" role="alert" style="display: none;">
-      <h4 class="alert-heading">Personality Updated!</h4>
-      <hr> Use this menu to:
-
-
-      <p class="mb-0">
-      <ul>
-        <li>Review and refine <%= Object.keys(proxies)[0] %>'s personality.</li>
-        <li>Create custom shareable links.</li>
-        <li>Train <%= Object.keys(proxies)[0] %> to interact on your behalf in other contexts.</li>
-      </ul>
-      Click the cog icon to access this menu when you need it.</p>
-      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    </div>
-  </div>
   </div>
   </div>
   <% } %>
