@@ -540,7 +540,7 @@ async function askBot(event) {
 
   // Clear the input field immediately after the function runs
   userInputElem.value = "";
-  updateAvatar(avatar, "smile");
+  updateAvatar(avatar, "intrigued");
   // Set a timeout to update the bot image to thinking image
   confusedTimer = setTimeout(() => {
     updateAvatar(avatar, "confused");
@@ -781,6 +781,7 @@ function updateContent() {
   const yourName = proxies[Object.keys(proxies)[0]][contentId + "Name"];
 
   document.getElementById("yourName").innerText = yourName + ":";
+  document.getElementById("proxyName").innerText = yourName + ":";
   // document.getElementById("simulate").innerText =
   //   "Add Guest " + selectElement.value + ":";
   const content = proxies[Object.keys(proxies)[0]][contentId] || ""; // Fetch the content based on contentId
@@ -831,8 +832,8 @@ function updateContent() {
 
   // document.getElementById("contextDescription").innerText = proxies[Object.keys(proxies)[0]][contentId+"Instructions"];
 
-  document.getElementById("shareDescription").innerText =
-    proxies[Object.keys(proxies)[0]][contentId + "Instructions"];
+  document.getElementById("shareDescription").innerText = `Copy the custom URL and let others interact with ` + proxyName+'.';
+    // proxies[Object.keys(proxies)[0]][contentId + "Instructions"];
 
   // document.getElementById("begin").innerText =
   //   selectElement.value + " " + proxyName;
@@ -1337,7 +1338,7 @@ function doneTyping() {
 function extractName(userMessage) {
   // Extract the name from the user's message, assuming format "Name: message"
   avatar = userMessage.split(":")[0].trim();
-  updateAvatar(avatar, "smile");
+  updateAvatar(avatar, "intrigued");
 
   // document.getElementById('botImage').src = "/img/" + avatar + "/smile";
 }
@@ -1455,14 +1456,15 @@ function updateUrl(context) {
   params.delete("guest");
 
   if (guestNamesSet.size > 0) {
-    let addProxySelect = document.getElementById("addProxySelect");
+    let proxyInput = document.getElementById("proxyInput");
     console.log("Add Proxy Select:", guestDisplay);
-    addProxySelect.innerText = guestDisplay;
+    proxyInput.value = guestDisplay;
     params.append("guest", Array.from(guestNamesSet).join(","));
   }
-
+  let practiceContext= document.getElementById("practiceContext");
   switch (context) {
     case "interview":
+      practiceContext.innerText = "Practice Interview";
       var roleInput = document.getElementById("roleInput");
       var orgInput = document.getElementById("orgInput");
       if (roleInput && roleInput.value) {
@@ -1475,10 +1477,17 @@ function updateUrl(context) {
       break;
 
     case "date":
+      practiceContext.innerText = "Practice Date:";
       // Add any specific parameters for the "date" context here
       break;
 
+      case "meet":
+        practiceContext.innerText = "Practice Meeting:";
+        // Add any specific parameters for the "date" context here
+        break;
+
     case "debate":
+      practiceContext.innerText = "Practice Debate:";
       var topicInput = document.getElementById("topicInput");
       if (topicInput && topicInput.value) {
         params.append("topic", topicInput.value);
@@ -1716,7 +1725,7 @@ document.getElementById("userInput").addEventListener("input", function () {
 document.getElementById("submitAs").addEventListener("change", function () {
   if (isRequestPending) return;
   if (speaking) return;
-  updateAvatar(document.getElementById("submitAs").value, "smile");
+  updateAvatar(document.getElementById("submitAs").value, "intrigued");
   botResponse.textContent = document.getElementById("userInput").value;
   toggleResponseContainer();
 });
@@ -1871,7 +1880,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
       //     submitAsButton.appendChild(optionAs);
       //     optionAs.selected = true;
       //     // addButton();
-      //     updateAvatar(hostName, "smile");
+      //     updateAvatar(hostName, "intrigued");
 
       //     getHosts();
       //     const submitToButton = document.createElement("input");
