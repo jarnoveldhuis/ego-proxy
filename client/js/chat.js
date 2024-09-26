@@ -3,60 +3,58 @@
 // Config Section
 let siteId = window.location.pathname.split("/")[1];
 
-// Audio
+// Audio Configuration
 let isVoiceLoading = false;
 let speaking = false;
 let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let analyser = audioCtx.createAnalyser();
-let globalAudio; // A global audio object
+let globalAudio;
 let isTtsEnabled = false;
 
 // Avatars
-let avatar, previousAvatar;
+let avatar = "Guest";
+let previousAvatar;
 let typingTimer;
-let doneTypingInterval;
-let confusedTimer;
-const thinkDelay = 2000;
+let doneTypingInterval = 2000;
+let thinkDelay = 2000;
 let laughLength = 1500;
-let laugh;
-let laughs;
 let isLaughing = false;
 
-// Chat
+// Chat Configuration
 let transcriptHtml = "Begin conversation.";
 let transcriptText = "Begin conversation.";
-let trainScript;
+let trainScript = "";
 const transcriptButtonHtml = `<button class="btn" id="showFormBtn" data-bs-toggle="modal" data-bs-target="#transcriptModal"><i class="fas fa-file-alt"></i></button>`;
 let isRequestPending = false;
-let hosts;
-let regularUrl;
-let response;
+let hosts = [];
+let guests = [];
+let regularUrl = "";
+let response = "";
 let previousResponse = "";
 let currentPrompt = "";
 let submitButton;
 let submitAsElement;
 let promptElement;
-let shareUrl;
-let trainingUrl;
+let shareUrl = "";
+let trainingUrl = "";
 let trainingProgress = 0;
 
 // Settings
-let role;
-let org;
-let contentId;
-let content;
-let submitAs;
-let submitTo;
-let hasPersonality;
-var settingsModal;
-var feedbackModal;
+let role = "";
+let org = "";
+let contentId = "";
+let content = "";
+let submitAs = "";
+let submitTo = "";
+let hasPersonality = false;
 let saveButton;
-let training;
-let tutorial;
+let training = false;
+let tutorial = false;
+let settingsModal;
+let feedbackModal;
 
 // Image Management Functions
-// --------------------------
-function preloadImages(proxies) {
+async function preloadImages(proxies) {
   if (typeof proxies !== "object" || proxies === null) {
     console.error("Invalid proxies object:", proxies);
     return;
@@ -82,12 +80,11 @@ function preloadImages(proxies) {
   }
 }
 
-// Change
 function updateAvatar(submit, reaction) {
-  let avatar = "Guest";
   clearTimeout(typingTimer);
   let botImage = document.getElementById("botImage");
-  let botContainer = document.querySelector(".bot-container"); // Parent div
+  let botContainer = document.querySelector(".bot-container");
+
   if (typeof submit !== "undefined") {
     avatar = submit;
     let proxy = proxies[avatar];
@@ -98,45 +95,29 @@ function updateAvatar(submit, reaction) {
       !proxy[reaction][0].url
     ) {
       console.log("Invalid proxy or reaction");
+      console.log("Reaction:", reaction);
       return;
     }
 
     if (!typeof proxy["laugh"]) {
       reaction = "joy";
     }
-    let imagePath = proxy[reaction][0].url;
-    // Set the background image of the parent div
+
+    const imagePath = proxy[reaction][0].url;
     botContainer.style.backgroundImage = `url(${imagePath})`;
     botContainer.style.backgroundSize = "cover";
-
-    // Update the image immediately
     botImage.src = imagePath;
 
-    let submitButtons = document.querySelectorAll('input[type="submit"]');
-    let submitAs = document.getElementById("submitAs").value;
-    let inputField = document.getElementById("userInput");
+    const submitButtons = document.querySelectorAll('input[type="submit"]');
+    const submitAs = document.getElementById("submitAs").value;
+    const inputField = document.getElementById("userInput");
+    
     if (submitAs in proxies || !inputField.value.trim()) {
       submitButtons.forEach((button) => {
         button.disabled = button.value === avatar;
       });
     }
 
-    let numProxies = Object.keys(proxies).length;
-    // if (submitButtons.length < 2) {
-    //   submitButtons.forEach((button) => {
-    //     if (button.disabled) {
-    //       button.style.display = "block";
-    //     }
-    //   });
-    // } else {
-    //   submitButtons.forEach((button) => {
-    //     if (button.disabled) {
-    //       button.style.display = "none";
-    //     } else {
-    //       button.style.display = "block";
-    //     }
-    //   });
-    // }
 
     return submitButtons;
   }
@@ -187,21 +168,15 @@ function handleReaction(avatar, emotion) {
         botContainer.classList.remove("laughing");
         resolve();
       };
-
-      // Set a timer if needed for specific duration of laughter
     } else if (!proxy.laughSounds && emotion.toLowerCase() === "laugh") {
       updateAvatar(avatar, "joy".toLowerCase());
       botContainer.classList.add("laughing");
 
       setTimeout(() => {
-        updateAvatar(avatar, "friendly"); // Reset the image after the laugh
+        updateAvatar(avatar, "friendly");
         botContainer.classList.remove("laughing");
         resolve();
       }, laughLength);
-
-      // Handle the case for avatars without laugh sounds
-      // For example, setting a default image or different behavior
-      // You can also set a default or smile image here if needed
     } else {
       updateAvatar(avatar, emotion.toLowerCase());
       resolve();
@@ -210,8 +185,6 @@ function handleReaction(avatar, emotion) {
 }
 
 // TTS Functions
-// -------------
-
 function updateImageBasedOnVolume(audio) {
   if (!speaking) {
     return;
@@ -233,17 +206,20 @@ function updateImageBasedOnVolume(audio) {
   } else {
     volumeThreshold = 1;
   }
+
   if (volume > volumeThreshold) {
     updateAvatar(avatar, "speak");
     // document.getElementById('botImage').src = document.getElementById('botImage').src = "/img/" + avatar + "/speak";
   } else {
     updateAvatar(avatar, "friendly");
   }
+
   audio.onended = () => {
     speaking = false;
     updateAvatar(avatar, "friendly");
     return speaking;
   };
+
   requestAnimationFrame(() => updateImageBasedOnVolume(audio));
 }
 
@@ -252,7 +228,6 @@ function handleSpeech(audioUrlWithAvatar) {
 
   if (isTtsEnabled === true) {
     speaking = true;
-    // Check if 'audioUrlWithAvatar' contains query parameters
     if (audioUrlWithAvatar.includes("?")) {
       [audioUrl, avatarName] = audioUrlWithAvatar.split("?=");
       updateAvatar(avatarName, "joy");
@@ -269,57 +244,44 @@ function handleSpeech(audioUrlWithAvatar) {
     }
 
     if (globalAudio.src !== audioUrl) {
-      globalAudio.src = audioUrl; // Set new source only if it's different
-      globalAudio
-        .play()
-        .catch((e) => console.error("Error attempting to play audio:", e));
-    } else {
-      globalAudio
-        .play()
-        .catch((e) => console.error("Error attempting to play audio:", e));
+      globalAudio.src = audioUrl;
     }
 
+    globalAudio
+      .play()
+      .catch((e) => console.error("Error attempting to play audio:", e));
+
     globalAudio.onplay = () => {
-      // submitButtons.forEach(button => {
-      //   button.disabled = true;
-      // });
       updateImageBasedOnVolume(globalAudio);
     };
   }
 }
 
-// Turn off/on voice
 function toggleTtsState() {
   console.log("Toggling voice state");
   isTtsEnabled = !isTtsEnabled;
-  var icon = document.getElementById("ttsIcon");
+  let icon = document.getElementById("ttsIcon");
+
   if (isTtsEnabled) {
     console.log("Voice is ON");
     icon.classList.replace("fa-volume-mute", "fa-volume-up");
-    // Update URL
     let url = new URL(window.location.href);
     url.searchParams.set("voice", "true");
     history.pushState({}, "", url);
   } else {
     console.log("Voice is OFF");
     icon.classList.replace("fa-volume-up", "fa-volume-mute");
-
-    // Update URL
     let url = new URL(window.location.href);
     url.searchParams.delete("voice");
     history.pushState({}, "", url);
   }
 }
 
-// Text to Speech conversion
 async function textToSpeech(fullText, ttsText) {
   const voiceLoad = document.getElementById("voiceLoad");
   const botResponse = document.getElementById("botResponse");
   const audioControls = document.getElementById("audioControls");
   submitButtons = document.querySelectorAll('input[type="submit"]');
-
-  // const playIcon = document.getElementById('playIcon');
-  // const downloadIcon = document.getElementById('downloadIcon');
 
   isRequestPending = true;
   isVoiceLoading = true;
@@ -335,35 +297,34 @@ async function textToSpeech(fullText, ttsText) {
       },
       body: JSON.stringify({ text: ttsText }),
     });
+
     if (response.status === 429) {
       toggleTtsState();
       voiceLoad.classList.remove("loading");
       isRequestPending = false;
 
-      var myModal = new bootstrap.Modal(
+      let rateLimitModal = new bootstrap.Modal(
         document.getElementById("rateLimitModal"),
         {}
       );
-      myModal.show();
+      rateLimitModal.show();
 
       return;
     }
+
     if (!response.ok) {
       throw new Error("Network response was not ok " + response.statusText);
     }
 
     const blob = await response.blob();
-
     const audioUrl = URL.createObjectURL(blob);
     let audio = new Audio(audioUrl);
 
     speaking = true;
-
     isVoiceLoading = false;
     appendToTranscript(fullText, audioUrl);
     audioControls.style.display = "block";
 
-    // Handle any errors that occur during playback
     audio.addEventListener("error", (e) => {
       let error = e.target.error;
       console.error(
@@ -375,7 +336,6 @@ async function textToSpeech(fullText, ttsText) {
     });
 
     voiceLoad.classList.remove("loading");
-
     isRequestPending = false;
     isVoiceLoading = false;
 
@@ -388,8 +348,6 @@ async function textToSpeech(fullText, ttsText) {
 }
 
 // General Chat Functions
-// ----------------------
-
 function disableSubmitButtons() {
   const submitButtons = document.querySelectorAll('input[type="submit"]');
   submitButtons.forEach((button) => (button.disabled = true));
@@ -406,10 +364,9 @@ function appendToTranscript(content, audioUrl) {
   }
 
   const transcript = document.getElementById("transcript");
-  let newContent = content.replace(/<br>/g, "\n"); // Replace <br> tags with newline characters
-  let htmlContent = content; // Keep <br> tags for HTML version
+  let newContent = content.replace(/<br>/g, "\n");
+  let htmlContent = content;
 
-  // Retrieve avatar names from the HTML
   const submitAsOptions = Array.from(
     document.getElementById("submitAs").options,
     (opt) => opt.value
@@ -418,11 +375,8 @@ function appendToTranscript(content, audioUrl) {
     document.getElementById("submitTo").querySelectorAll("input"),
     (input) => input.value
   );
-
-  // Combine the arrays and remove duplicates
   const avatars = [...new Set([...submitAsOptions, ...submitToOptions])];
 
-  // Dynamically highlight based on avatars in the configuration
   avatars.forEach((avatar) => {
     const regex = new RegExp(`(${avatar}):`, "g");
     htmlContent = htmlContent.replace(
@@ -432,7 +386,6 @@ function appendToTranscript(content, audioUrl) {
     newContent = newContent.replace(regex, `$1:`); // Keep the avatar name for plain text
   });
 
-  // Generate unique IDs for the audio controls
   let audioControlsHtml = "";
   if (audioUrl) {
     const uniqueId = Date.now(); // A simple unique ID using the current timestamp
@@ -455,7 +408,6 @@ function appendToTranscript(content, audioUrl) {
   audioControls.innerHTML = audioControlsHtml;
   // Check if the content has already been appended
   if (transcriptText.includes(newContent)) {
-    console.log("Content already appended to transcript");
     return;
   } else {
     transcriptHtml += "<br>" + htmlContent;
@@ -463,7 +415,6 @@ function appendToTranscript(content, audioUrl) {
   }
 }
 
-// Hide/Reveal sppech bubble
 function toggleResponseContainer() {
   var botResponse = document.getElementById("botResponse");
   var responseContainer = document.getElementById("response-container");
@@ -477,12 +428,12 @@ function toggleResponseContainer() {
   }
 }
 
-// Send user input to the bot and return answer
 async function askBot(event) {
-  if (isRequestPending) return;
-  if (speaking) return;
+  if (isRequestPending || speaking) return;
+
   isRequestPending = true;
   disableSubmitButtons();
+
   if (audioCtx.state === "suspended") {
     audioCtx
       .resume()
@@ -492,31 +443,30 @@ async function askBot(event) {
       .catch((error) => console.error("Error resuming AudioContext:", error));
   }
 
+  const audioControls = document.getElementById("audioControls");
   audioControls.style.display = "none";
   isRequestPending = true;
+
   submitButtons = document.querySelectorAll('input[type="submit"]');
   submitTo = event instanceof Event ? event.submitter.value : null;
   avatar = submitTo in proxies ? submitTo : "Guest";
 
   const botResponse = document.getElementById("botResponse");
-
-  // Get user input elements
   const userInputElem = document.getElementById("userInput");
   const submitAsElem = document.getElementById("submitAs");
   let submitAs = submitAsElem.value;
   const botImage = document.getElementById("botImage");
   let userInputValue = userInputElem.value;
+
   hosts = getHosts(avatar);
   const promptElement = document.getElementById("prompt");
 
-  // Append the userInputValue with the clicked button name and a colon if submitTo is present
   if (userInputValue) {
     userInputValue = `${submitAs}: ${userInputValue}`;
     promptElement.textContent = userInputValue;
     promptElement.innerHTML += transcriptButtonHtml;
   }
 
-  // Check if userInputValue is empty, if so use the last bot's response
   if (!userInputValue.trim()) {
     userInputValue = `${submitAs}: `;
     if (previousResponse) {
@@ -529,40 +479,24 @@ async function askBot(event) {
     "trainingProgressBar"
   );
 
-  function updateProgressBar(progressPercentage) {
-    trainingProgressElement.style.width = `${progressPercentage}%`;
-    trainingProgressElement.setAttribute("aria-valuenow", progressPercentage);
-    // trainingProgressElement.textContent = `${progressPercentage}%`;
-  }
-
   console.log("Percent:", (transcriptText.length / transcriptThreshold) * 100);
   trainingProgress = (transcriptText.length / transcriptThreshold) * 100;
 
-  // Clear the input field immediately after the function runs
   userInputElem.value = "";
   updateAvatar(avatar, "intrigued");
-  // Set a timeout to update the bot image to thinking image
   confusedTimer = setTimeout(() => {
     updateAvatar(avatar, "confused");
-    // botImage.src = "/img/" + avatar + "/think";
   }, thinkDelay);
-  // Clear the botResponse and add a 'loading' class to it
-  console.log("Transcript Length:", transcriptText.length);
+
   if (tutorial || training) {
-    // console.log(trainingProgress)
-    // updateProgressBar(trainingProgress)
     if (trainingProgress < 100) {
       trainingProgressElement.textContent =
-        `Training Progress: ` + Math.floor(trainingProgress) + `%`;
+        `${context.context} Progress: ` + Math.floor(trainingProgress) + `%`;
     } else {
-      trainingProgressElement.textContent = `Training Complete!`;
+      trainingProgressElement.textContent = `Complete!`;
     }
   }
-  if (
-    transcriptText.length > transcriptThreshold &&
-    // siteId === "meet" &&
-    hasPersonality === false
-  ) {
+  if (transcriptText.length > transcriptThreshold && hasPersonality === false) {
     document.getElementById("trainingProgressBar").innerText =
       "Updating Personality";
     trainingProgressElement.textContent = `Updating Personality`;
@@ -577,10 +511,10 @@ async function askBot(event) {
   askBot.disabled = true;
   toggleResponseContainer();
 
-  // Make a POST request to the '/ask' endpoint with the user's input
   if (userInputValue != `${submitAs}: `) {
     appendToTranscript(userInputValue);
   }
+
   try {
     const fetchResponse = await fetch("/ask", {
       method: "POST",
@@ -593,7 +527,7 @@ async function askBot(event) {
         submitAs: submitAs,
         submitTo: submitTo,
         siteId: siteId,
-        hosts: hosts,
+        guests: guests,
         training: training,
         tutorial: tutorial,
       }),
@@ -605,19 +539,18 @@ async function askBot(event) {
       settingsModal.show();
       document.getElementById("contentField").value = data.transcriptSummary;
       document.getElementById("toggleButton").style.display = "inline-block";
-      // document.getElementById("trainingProgressBar").innerText = "Updating Personality";
-      // setTimeout(() => {
-      //   const contextUpdatedAlert = document.getElementById("contextUpdated");
-      //   contextUpdatedAlert.classList.add("show");
-      // }, 1000);
+      setTimeout(() => {
+        showAlert(document.getElementById("contextUpdated"));
+      }, 1000);
 
       proxies[Object.keys(proxies)[0]].meet = data.transcriptSummary;
       toggleTraining();
     }
     let avatar = data.answer.split(":")[0].trim();
     console.Object;
-    // Clear the confusedTimer and update the botResponse with the data received
+
     clearTimeout(confusedTimer);
+
     let updatedText;
     if (data.answer.includes(":")) {
       updatedText = data.answer.split(":").slice(1).join(":").trim();
@@ -625,9 +558,8 @@ async function askBot(event) {
       updatedText = data.answer;
     }
 
-    updatedText = data.answer.split(":").slice(1).join(":").trim();
-
     const lastWord = updatedText.match(/\((.*?)\)$/);
+
     if (lastWord) {
       updatedText = updatedText.replace(lastWord[0], "").trim();
     } else {
@@ -638,6 +570,7 @@ async function askBot(event) {
     let emotion = data.answer.match(/\((.*?)\)/);
     emotion = emotion ? emotion[1] : ""; // Set emotion to empty string if not found
     botResponse.innerHTML = updatedText;
+
     if (isTtsEnabled) {
       isRequestPending = true;
       const audioUrl = await textToSpeech(data.answer, updatedText);
@@ -653,6 +586,7 @@ async function askBot(event) {
 
     let submitButtons = document.querySelectorAll('input[type="submit"]');
     isRequestPending = false;
+
     // Disable butons
     // submitButtons.forEach(button => {
     //   if (button.value === avatar) {
@@ -663,20 +597,6 @@ async function askBot(event) {
     // });
 
     fetchedAnswer = data.answer;
-    // Update buttons when personality formed.
-    // if (data.hasPersonality === true) {
-    //   console.log("Proxy:", proxies);
-    //   proxies["Creator"].hasPersonality = false;
-    //   proxies[submitAs].hasPersonality = data.hasPersonality;
-    //   let submitButtons = document.querySelectorAll('input[type="submit"]');
-    //   submitButtons.forEach((button) => {
-    //     if (button.value === submitAs) {
-    //       button.disabled = false;
-    //       button.style.display = "block";
-    //     }
-    //   });
-    // }
-    // console.log("Proxy:", submitAs, proxies[submitAs].hasPersonality);
     previousResponse = fetchedAnswer;
     previousAvatar = avatar;
     avatar = avatar in proxies ? avatar : "Guest";
@@ -685,22 +605,13 @@ async function askBot(event) {
 
     return previousAvatar;
   } catch (error) {
-    // If there's an error, clear the confusedTimer and update the botResponse and bot image
     clearTimeout(confusedTimer);
-    // botResponse.textContent = 'Error communicating with the bot.';
     (botResponse.innerHTML = "Error:"), error;
-    // Sorry, I\'ve reached my monthly API budget. Come back in March. Also maybe possibly consider joining my <a href="https://patreon.com/Instinite?utm_medium=unknown&utm_source=join_link&utm_campaign=creatorshare_creator&utm_content=copyLink">Patreon</a> or buying me a <a href="https://www.buymeacoffee.com/jrnvldhs">coffee</a>?'
-
     botResponse.classList.remove("loading");
     botImage.src = "/img/logo.png";
     console.error("Error:", error);
     submitButtons = document.querySelectorAll('input[type="submit"]');
     isRequestPending = false;
-    // Disable butons
-    // submitButtons.forEach(button => {
-    //   button.disabled = false;
-    // }
-    // );
   } finally {
     // enableSubmitButtons(); // Re-enable buttons on both success and failure
     isRequestPending = false;
@@ -708,19 +619,23 @@ async function askBot(event) {
 }
 
 //Settings
-//---------------------------------------------------------
+
+// Function to show the alert and adjust z-index
+function showAlert(alertElement) {
+  alertElement.style.zIndex = 1070; // Set z-index higher than modals
+  alertElement.classList.add("show"); // Show the alert
+}
 
 function getHosts(currentSpeaker) {
+  // Add checked names as a single "guest" parameter
   const checkboxes = document.querySelectorAll(
-    '#hostButtons input[type="checkbox"]'
+    "#addProxyDropdown .form-check-input:checked"
   );
-  var hosts = [];
+  hosts = [];
   checkboxes.forEach(function (checkbox) {
-    if (checkbox.checked) {
-      hosts.push(checkbox.id);
-    }
+    hosts.push(checkbox.value);
   });
-  console.log("Hosts:", hosts);
+  hosts.push(proxyName);
   // Remove the currentSpeaker from the hosts array
   if (currentSpeaker) {
     hosts = hosts.filter((host) => host !== currentSpeaker);
@@ -742,7 +657,7 @@ function getHosts(currentSpeaker) {
 }
 
 function updateContext() {
-  var context = document.getElementById("contextSelect").value;
+  let context = document.getElementById("contextSelect").value;
   selectProxyBasedOnContext(context);
   document.getElementById("interviewModal").style.display =
     context === "Interview" ? "block" : "none";
@@ -750,57 +665,45 @@ function updateContext() {
   //   context === "Date" ? "block" : "none";
   document.getElementById("debateModal").style.display =
     context === "Debate" ? "block" : "none";
-  var context = document.getElementById("contextSelect").value;
+  context = document.getElementById("contextSelect").value;
   const saveButton = document.getElementById("save");
 
   saveButton.disabled = true;
-
-  // document.getElementById("save").innerText = "Save" + " " + contentId;
-  // document.getElementById('meetModal').style.display = context === 'meet' ? 'block' : 'none';
 }
-// function showParams() {
-//   document.getElementById("allUrl").style.display = "none";
-//   document.getElementById("allContent").style.display = "none";
-//   document.getElementById("navTabs").style.display = "none";
-//   document.getElementById("begin").style.display = "block";
-//   document.getElementById("profile").classList.remove("active");
-//   document.getElementById("share").classList.add("active");
-//   document.getElementById("profile").classList.remove("show");
-//   document.getElementById("share").classList.add("show");
-// }
-let originalContent;
-function updateContent() {
-  var successMessage = document.getElementById("contextUpdated");
-  const selectElement = document.getElementById("contextSelect");
-  const contentId = selectElement.value.toLowerCase(); // 'small talk', 'interview', 'date', 'debate'
-  const contentName = proxies[Object.keys(proxies)[0]][contentId + "Prompt"];
 
-  // Content Name
+let originalContent;
+
+function updateContent() {
+  const selectElement = document.getElementById("contextSelect");
+  const contentId = selectElement.value.toLowerCase();
+  const contentName = proxies[Object.keys(proxies)[0]][contentId + "Prompt"];
   const yourName = proxies[Object.keys(proxies)[0]][contentId + "Name"];
 
   document.getElementById("yourName").innerText = yourName + ":";
   document.getElementById("proxyName").innerText = yourName + ":";
-  // document.getElementById("simulate").innerText =
-  //   "Add Guest " + selectElement.value + ":";
-  const content = proxies[Object.keys(proxies)[0]][contentId] || ""; // Fetch the content based on contentId
+  const content = proxies[Object.keys(proxies)[0]][contentId] || "";
 
-  // successMessage.style.display = "none"; // Hid success message
   let params = new URLSearchParams(window.location.href);
   if (params.has("share")) {
-    document.getElementById("allUrl").style.display = "none";
-    document.getElementById("allContent").style.display = "none";
+    document.getElementById("settingsProfile").style.display = "none";
+    document.getElementById("tabDescription").style.display = "none";
     document.getElementById("toggleButton").style.display = "none";
     document.getElementById("addProxyDropdown").style.display = "none";
 
-    // document.getElementById("guests").style.display = "none";
-    // document.getElementById("navTabs").style.display = "none";
-    // document.getElementById("begin").style.display = "block";
-    // document.getElementById("profile").classList.remove("active");
-    // document.getElementById("share").classList.add("active");
-    // document.getElementById("profile").classList.remove("show");
-    // document.getElementById("share").classList.add("show");
-    // document.getElementById("backToProfile").style.display = "none";
+    document.getElementById("scenarioSelector").style.display = "none";
+    document.getElementById("myTab").style.display = "none";
+    document.getElementById("urlCopy").style.display = "none";
+    document.getElementById("parameters").style.display = "block";
+    document.getElementById("practice-tab").classList.remove("active");
+    document.getElementById("share-tab").classList.add("active");
+    document.getElementById("practice").classList.remove("active");
+    document.getElementById("share").classList.add("active");
+    document.getElementById("practice").classList.remove("show");
+    document.getElementById("share").classList.add("show");
+    document.getElementById("testProxy").innerText = "Begin";
     document.getElementById("yourName").innerText = "Your Name:";
+    document.getElementById("settingsHeaderText").innerText =
+      proxyName + " " + siteId;
   } else {
     document.getElementById("yourName").innerText = yourName + ":";
   }
@@ -815,66 +718,33 @@ function updateContent() {
     console.log("Training mode enabled");
 
     document.getElementById("toggleButton").style.display = "none";
-    // var profileTab = new bootstrap.Tab(document.getElementById("profile-tab"));
-
-    // // Activate the Profile tab
-    // profileTab.show();
   }
-
-  // Set the value of the hidden input and the textarea
   document.getElementById("contentIdField").value = contentId;
 
   document.getElementById("contentField").value = content;
   toggleTraining();
   document.getElementById("contentId").innerHTML = `<b>${contentName}:</b>`;
 
-  // document.getElementById("contextDescription").innerText = proxies[Object.keys(proxies)[0]][contentId+"Instructions"];
-
-  document.getElementById("shareDescription").innerText =
-    `Copy the custom URL and let others interact with ` + proxyName + ".";
-  // proxies[Object.keys(proxies)[0]][contentId + "Instructions"];
-
-  // document.getElementById("begin").innerText =
-  //   selectElement.value + " " + proxyName;
-
-  // trainName = selectElement.value === "Meet" ? "Meeting" : selectElement.value;
-  // document.getElementById("trainProxy").innerText = "Practice " + trainName;
-
-  // document.getElementById("yourName").innerText =
-  // selectElement.value + " " + proxyName +" as:";
-
-  // document.getElementById("meetProxy").innerHTML =
-  //   selectElement.value + " " + proxyName;
-
-  // document.getElementById("trainingContext").innerText =
-  //   `${selectElement.value}:`;
+  document.getElementById(
+    "practice-tab"
+  ).innerHTML = `Practice ${selectElement.value}`;
 
   document.getElementById("contentField").placeholder =
-    "Click 'Train' below to generate " +
+    "Click 'Begin' below to generate " +
     contentName +
     " or just update manually here.";
-  // document.getElementById("save").innerText = "Save " + contentName;
-  // document.getElementById("meetProxy").innerText = "Meet " + proxy;
-
-  // Store the original content
   originalContent = content;
 }
 
 function removeParams(url) {
-  // Create a URL object
   let urlObj = new URL(url);
-  // Remove the 'share' parameter if it exists
   return urlObj.searchParams.delete("share");
 }
 
 function checkParams(url) {
-  // Get all visible form fields
   const formFields = document.querySelectorAll(".params");
   let allFieldsFilled = true;
-
-  // Check if all visible fields are filled out
   formFields.forEach((field) => {
-    // Check if the field's parent div is visible
     if (field.closest("div").offsetParent !== null) {
       if (field.value.trim() === "") {
         allFieldsFilled = false;
@@ -890,26 +760,21 @@ function testUrl(url) {
   window.open(url, "_blank");
 }
 
-// Redirects to URL with new field parameters
 function redirectToUrl(url) {
   let newUrl = new URL(url);
   let newParams = new URLSearchParams(newUrl.search);
   if (newParams.has("training")) {
     window.location.href = trainingUrl;
   } else {
-    // Get all visible form fields
     const formFields = document.querySelectorAll(".params");
     let allFieldsFilled = true;
-
-    // Check if all visible fields are filled out
     formFields.forEach((field) => {
-      // Check if the field's parent div is visible
       if (field.closest("div").offsetParent !== null) {
         if (field.value.trim() === "") {
           allFieldsFilled = false;
-          field.classList.add("is-invalid"); // Highlight the empty field
+          field.classList.add("is-invalid");
         } else {
-          field.classList.remove("is-invalid"); // Remove highlight if filled
+          field.classList.remove("is-invalid");
         }
       }
     });
@@ -925,27 +790,19 @@ function redirectToUrl(url) {
       } else {
         console.error("URL input is empty");
       }
-    } else {
-      // alert("Please fill out all required fields.");
     }
   }
 }
-
-// Redirects to URL with new field parameters
 function redirectToTraining(url) {
-  // Get all visible form fields
   const formFields = document.querySelectorAll(".params");
   let allFieldsFilled = true;
-
-  // Check if all visible fields are filled out
   formFields.forEach((field) => {
-    // Check if the field's parent div is visible
     if (field.closest("div").offsetParent !== null) {
       if (field.value.trim() === "") {
         allFieldsFilled = false;
-        field.classList.add("is-invalid"); // Highlight the empty field
+        field.classList.add("is-invalid");
       } else {
-        field.classList.remove("is-invalid"); // Remove highlight if filled
+        field.classList.remove("is-invalid");
       }
     }
   });
@@ -986,24 +843,15 @@ function begin(transcript) {
 
 function copyUrl() {
   var urlInput = document.getElementById("urlInput");
-
-  // Use the Clipboard API to copy the URL
   navigator.clipboard
     .writeText(urlInput.value)
     .then(function () {
-      // Initialize the tooltip
       var urlCopyButton = document.getElementById("urlCopy");
       var tooltip = new bootstrap.Tooltip(urlCopyButton);
-
-      // Update the tooltip title
       urlCopyButton.setAttribute("data-bs-original-title", "Copied!");
-      // Show the tooltip
       tooltip.show();
-
-      // Hide the tooltip after 2 seconds and reset the title
       setTimeout(function () {
         urlCopyButton.setAttribute("data-bs-original-title", "");
-
         tooltip.hide();
       }, 1000);
     })
@@ -1019,14 +867,9 @@ function beginTraining() {
 
 function meet() {
   training = false;
-  // Remove active and show classes from the current active tab and content
   document.getElementById("profile").classList.remove("active", "show");
   document.getElementById("profile-tab").classList.remove("active");
-
-  // Add active and show classes to the new tab content
   document.getElementById("share").classList.add("active", "show");
-
-  // document.getElementById("share-tab").classList.add("active");
   document.getElementById("begin").style.removeProperty("display");
   document.getElementById("backToProfile").style.removeProperty("display");
   document.getElementById("allContent").style.display = "none";
@@ -1041,26 +884,21 @@ function train() {
 
   switch (selectedContext) {
     case "Interview":
-      // addButton(null, "Donnie");
-      trainingUrl = trainingUrl + "guest=Amy";
       redirectToUrl(trainingUrl);
       break;
 
     case "Meet":
-      // addButton(null, "Jarno");
-      trainingUrl = trainingUrl + "guest=Yarno";
       redirectToUrl(trainingUrl);
       break;
 
     case "Date":
-      // addButton(null, "Shadow");
-      trainingUrl = trainingUrl + "guest=Avery";
       redirectToUrl(trainingUrl);
       break;
 
     case "Debate":
-      // addButton(null, "Donnie");
-      trainingUrl = trainingUrl + "guest=Donnie";
+      redirectToUrl(trainingUrl);
+      break;
+    case "Adventure":
       redirectToUrl(trainingUrl);
       break;
 
@@ -1068,22 +906,8 @@ function train() {
       console.log("Unknown context: " + selectedContext);
       break;
   }
-  // // Remove active and show classes from the current active tab and content
-  // document.getElementById("profile").classList.remove("active", "show");
-  // document.getElementById("profile-tab").classList.remove("active");
-
-  // // Add active and show classes to the new tab content
-  // document.getElementById("share").classList.add("active", "show");
-
-  // // document.getElementById("share-tab").classList.add("active");
-  // document.getElementById("begin").style.removeProperty("display");
-  // document.getElementById("backToProfile").style.removeProperty("display");
-  // document.getElementById("allContent").style.display = "none";
-  // document.getElementById("allUrl").style.display = "none";
-  // document.getElementById("navTabs").style.display = "none";
 }
 
-// Function to toggle buttons based on contentField value
 function toggleTraining() {
   console.log("Toggling training button");
   const currentContent = document.getElementById("contentField").value;
@@ -1096,62 +920,30 @@ function toggleTraining() {
 
   if (currentContent !== originalContent) {
     saveButton.disabled = false;
-    // saveButton.style.visibility = "visible";
   } else {
     saveButton.disabled = true;
-    // saveButton.style.visibility = "hidden";
   }
 
   if (currentContent.trim() === "") {
-    // trainButton.style.display = "block";
-    // meetButton.style.display = "none";
     testButton.disabled = true;
   } else {
-    // trainButton.style.display = "none";
-    // meetButton.style.display = "block";
     testButton.disabled = false;
   }
 }
 
 function backToProfile() {
-  // Remove active and show classes from the current active tab and content
   training = false;
   updateUrl(document.getElementById("contextSelect").value.toLowerCase());
   document.getElementById("profile").classList.add("active", "show");
   document.getElementById("profile-tab").classList.add("active");
-
-  // Add active and show classes to the new tab content
   document.getElementById("share").classList.remove("active", "show");
   document.getElementById("share-tab").classList.remove("active");
   document.getElementById("backToProfile").style.display = "none";
   document.getElementById("begin").style.display = "none";
-
   document.getElementById("allContent").style.removeProperty("display");
   document.getElementById("allUrl").style.removeProperty("display");
   document.getElementById("navTabs").style.removeProperty("display");
-
-  // document.getElementById("begin").style.display = "block";
 }
-
-// function showBegin() {
-//  document.getElementById("allUrl").style.display = "none";
-// }
-
-// // Function to hide the 'begin' element
-// function hideBegin() {
-//   document.getElementById("allUrl").style.display = "block";
-// }
-
-// const tabLinks = document.querySelectorAll('.nav-link');
-// tabLinks.forEach(link => {
-//   if (link.id !== 'share-tab') {
-//     link.addEventListener('shown.bs.tab', hideBegin);
-//   }
-// });
-
-// function cancel() {
-//   window.location.href = regularUrl;
-// }
 
 function openUrlInNewTab() {
   var urlInput = document.getElementById("urlInput").value;
@@ -1159,14 +951,10 @@ function openUrlInNewTab() {
 }
 
 function tryToolTip() {
-  // Initialize the tooltip
   var tryButton = document.getElementById("begin");
   var tooltip = new bootstrap.Tooltip(tryButton);
 
-  // Show the tooltip
   tooltip.show();
-
-  // Hide the tooltip after 2 seconds and reset the title
   setTimeout(function () {
     tooltip.hide();
     tooltip.dispose();
@@ -1175,37 +963,30 @@ function tryToolTip() {
 }
 
 function processParameters(url) {
-  var currentUrl = new URL(window.location.href);
-  var currentParams = new URLSearchParams(currentUrl.search);
+  let currentUrl = new URL(window.location.href);
+  let currentParams = new URLSearchParams(currentUrl.search);
 
-  var newUrl = new URL(regularUrl);
-  var newParams = new URLSearchParams(newUrl.search);
-
-  // check if personality is available.
+  let newUrl = new URL(regularUrl);
+  let newParams = new URLSearchParams(newUrl.search);
 
   training = url
     ? newParams.has("training")
     : currentParams.has("training") || (contentId === "meet" && content === "");
   updateUrl(document.getElementById("contextSelect").value.toLowerCase());
-  var context = document.getElementById("contextSelect").value;
+  let context = document.getElementById("contextSelect").value;
 
-  var modalElement = document.getElementById("settingsModal") || "";
-  var settingsModal =
+  let modalElement = document.getElementById("settingsModal") || "";
+  let settingsModal =
     bootstrap.Modal.getInstance(modalElement) ||
     new bootstrap.Modal(modalElement);
-  var nameInput = document.getElementById("nameInput").value;
-
-  // Get all visible form fields
+  let nameInput = document.getElementById("nameInput").value;
   const formFields = document.querySelectorAll(".params");
   let allFieldsFilled = true;
 
-  // Check if all visible fields are filled out
   formFields.forEach((field) => {
-    // Skip the nameInput field
     if (field.id === "nameInput") {
       return;
     }
-    // Check if the field's parent div is visible
     if (field.closest("div").offsetParent !== null) {
       if (field.value.trim() === "") {
         allFieldsFilled = false;
@@ -1229,10 +1010,9 @@ function processParameters(url) {
     } else {
       settingsModal.hide();
 
-      var submitAsSelect = document.getElementById("submitAs");
-      var nameOption = submitAsSelect.querySelector('option[value="You"]');
+      let submitAsSelect = document.getElementById("submitAs");
+      let nameOption = submitAsSelect.querySelector('option[value="You"]');
 
-      // Allow no name if guest is selected
       if (nameOption && !currentParams.has("guest")) {
         nameOption.value = nameInput;
         nameOption.textContent = nameInput;
@@ -1240,7 +1020,7 @@ function processParameters(url) {
         nameOption.value = proxyName;
         nameOption.textContent = proxyName;
       }
-      transcriptText = "Introduce yourself to " + nameInput + ".";
+
       begin(transcriptText);
     }
   }
@@ -1248,50 +1028,48 @@ function processParameters(url) {
   switch (context) {
     case "Meet":
       transcriptText = "Introduce yourself to " + proxyName + ".";
-      trainScript = "Begin coversation.";
-
+      trainScript = transcriptText;
       fieldLogic();
 
       break;
 
     case "Interview":
-      var roleInput = document.getElementById("roleInput").value;
-      var orgInput = document.getElementById("orgInput").value;
+      const roleInput = document.getElementById("roleInput").value
+        ? document.getElementById("roleInput").value + " position"
+        : "position";
 
-      trainScript = "You are interviewing for a job. Begin interview:";
-      transcriptText =
-        "You are interviewing for the role of " +
-        roleInput +
-        ". Introduce yourself by name to " +
-        nameInput +
-        " from " +
-        orgInput +
-        ":";
+      const orgInput = document.getElementById("orgInput").value
+        ? document.getElementById("orgInput").value
+        : " your company";
+
+      trainScript = ` ${proxyName} is interviewing for a ${roleInput} at ${orgInput}. Begin the interview:`;
+
+      transcriptText = ` You are interviewing for a ${roleInput}. Introduce yourself by name to ${nameInput} from ${orgInput}:`;
 
       fieldLogic();
 
       break;
 
     case "Date":
-      trainScript =
-        "You are on a date. Introduce yourself and try to get to know what they are looking for in a partner.";
+      trainScript = ` You are on a date with ${proxyName}. Introduce yourself and try to get to know what they are looking for in a partner.`;
 
-      transcriptText =
-        "You are on a date with " +
-        nameInput +
-        ". Say hello and say something slick.";
+      transcriptText = ` You are on a date with ${nameInput}. Introduce yourself and try to get to know what they are looking for in a partner.`;
 
       break;
 
     case "Debate":
       var topicInput = document.getElementById("topicInput").value;
-      trainScript = "You are debating " + proxyName + ".";
-      transcriptText =
-        "You are debating " +
-        nameInput +
-        " on the topic of " +
-        topicInput +
-        ".";
+      trainScript = ` You are debating ${proxyName} regarding ${topicInput}. Begin the debate by expressing your position.`;
+      transcriptText = ` You are debating ${nameInput} regarding ${nameInput}. Begin the debate by expressing your position.`;
+
+      fieldLogic();
+
+      break;
+
+    case "Adventure":
+      var topicInput = document.getElementById("topicInput").value;
+      trainScript = ` You are in the middle of an adventure when ${proxyName} suddenly joins. Greet ${proxyName}, explain the mission and ask for help.`;
+      transcriptText = ` You are in the middle of an adventure when ${nameInput} suddenly joins. Greet ${nameInput}, explain the mission and ask for help.`;
 
       fieldLogic();
 
@@ -1310,14 +1088,29 @@ function beginTraining(transcriptText) {
   settingsModal.hide();
 
   const submitAs = document.getElementById("submitAs");
+  const submitTo = document.getElementById("submitTo");
   submitAs.innerHTML = "";
 
   nameOption = document.createElement("option");
   nameOption.value = proxyName;
   nameOption.textContent = proxyName;
 
-  // Add the new option to the select element
   submitAs.appendChild(nameOption);
+  
+
+  function removeButtonByValue(buttonGroupId, buttonValue) {
+    const buttonGroup = document.getElementById(buttonGroupId);
+    const buttons = buttonGroup.querySelectorAll('input[type="submit"]');
+  
+    buttons.forEach(button => {
+      if (button.value === buttonValue) {
+        buttonGroup.removeChild(button);
+      }
+    });
+  }
+  
+  // Example usage
+  removeButtonByValue("submitTo", proxyName);
 
   const hiddenButton = document.querySelector(
     'input[name="go"][type="submit"][style*="display: none;"]'
@@ -1338,16 +1131,14 @@ function doneTyping() {
   } else {
     updateAvatar(avatar, "intrigued");
   }
-  // avatar = document.getElementById('submitAs').value;
-  // updateAvatar(avatar, 'smile')
+  avatar = document.getElementById("submitAs").value;
+
+  updateAvatar(avatar, "friendly");
 }
 
 function extractName(userMessage) {
-  // Extract the name from the user's message, assuming format "Name: message"
   avatar = userMessage.split(":")[0].trim();
   updateAvatar(avatar, "intrigued");
-
-  // document.getElementById('botImage').src = "/img/" + avatar + "/smile";
 }
 
 function decodeAndEncode(value) {
@@ -1357,7 +1148,6 @@ function decodeAndEncode(value) {
   return encodeURIComponent(value);
 }
 
-// Add event listeners to all checkboxes
 document
   .querySelectorAll("#addProxySelect .form-check-input")
   .forEach((checkbox) => {
@@ -1378,102 +1168,102 @@ function alpha(e) {
   );
 }
 
-// document.getElementById("proxyForm").addEventListener("submit", function(event) {
-//   event.preventDefault(); // Prevent the default form submission
-//   updateProxy();
-// });
 function selectProxyBasedOnContext(context) {
-  // Define a mapping between context values and checkbox values
   const contextToProxyMap = {
-    Interview: "Amy",
-    Debate: "Donnie",
-    Date: "Avery",
-    Meet: "Shadow",
-    // Add more mappings as needed
+    Interview: ["Amy"],
+    Debate: ["Donnie"],
+    Date: [],
+    Meet: ["Shadow", "Blaze"],
+    Adventure: ["Rick", "Snake"],
   };
 
-  // Deselect all checkboxes
   const allCheckboxes = document.querySelectorAll("input.form-check-input");
   allCheckboxes.forEach((checkbox) => {
     checkbox.checked = false;
   });
 
-  // Get the checkbox value corresponding to the context
-  const checkboxValue = contextToProxyMap[context];
+  const checkboxValues = contextToProxyMap[context];
 
-  if (checkboxValue) {
-    // Find the checkbox with the corresponding value
-    const checkbox = document.querySelector(
-      `input.form-check-input[value="${checkboxValue}"]`
-    );
-    if (checkbox) {
-      // Select the checkbox
-      checkbox.checked = true;
-      // Optionally, trigger the change event to update the URL
-      checkbox.dispatchEvent(new Event("change"));
-    }
+  // Explicitly handle the "Date" context to deselect all checkboxes
+  if (context === "Date") {
+    let proxyInput = document.getElementById("proxyInput");
+    proxyInput.value = "Select a date...";
+    
+    updateMeetProxyButtonState();
+    return; // All checkboxes are already deselected
+  }
+
+  if (checkboxValues && checkboxValues.length > 0) {
+    checkboxValues.forEach((checkboxValue) => {
+      const checkbox = document.querySelector(
+        `input.form-check-input[value="${checkboxValue}"]`
+      );
+      if (checkbox) {
+        checkbox.checked = true;
+        checkbox.dispatchEvent(new Event("change"));
+      }
+    });
+  }
+
+  updateMeetProxyButtonState();
+}
+
+function updateMeetProxyButtonState() {
+  const allCheckboxes = document.querySelectorAll("input.form-check-input");
+  const meetProxyButton = document.getElementById("meetProxy");
+
+  const anyChecked = Array.from(allCheckboxes).some(checkbox => checkbox.checked);
+
+  if (meetProxyButton) {
+    meetProxyButton.disabled = !anyChecked;
   }
 }
 
 function updateUrl(context) {
   const newProxy = document.getElementById("proxySelect").value;
-  var url = window.location.origin + "/" + context.replace(/\s/g, "");
-  var params = new URLSearchParams();
-  var nameInput = document.getElementById("nameInput");
+  let url = window.location.origin + "/" + context.replace(/\s/g, "");
+  let params = new URLSearchParams();
+  let nameInput = document.getElementById("nameInput");
 
   if (nameInput && nameInput.value) {
     params.append("name", nameInput.value);
   }
-
-  // Add checked names as a single "guest" parameter
   const checkboxes = document.querySelectorAll(
     "#addProxyDropdown .form-check-input:checked"
   );
-
-  var guests = [];
+  guests = [];
   checkboxes.forEach(function (checkbox) {
     guests.push(checkbox.value);
   });
 
-  console.log("Checkboxes:", checkboxes);
-
   let guestDisplay = "Select Proxies";
 
   if (guests.length === 1) {
-    // Only one host
     guestDisplay = `${guests[0]}`;
   } else if (guests.length === 2) {
-    // Two hosts, join with ' and '
     guestDisplay = `${guests[0]} and ${guests[1]}`;
   } else if (guests.length > 2) {
-    // More than two hosts, format with commas and 'and'
     guestDisplay = `${guests.slice(0, -1).join(", ")} and ${guests.slice(-1)}`;
   } else {
-    // No hosts selected or only the currentSpeaker was selected
     guestDisplay = "Select Proxies";
   }
 
-  // Use a Set to store unique guest names
-  var guestNamesSet = new Set(
+  let guestNamesSet = new Set(
     Array.from(checkboxes).map(function (checkbox) {
-      return checkbox.value; // Use value instead of id
+      return checkbox.value;
     })
   );
 
-  // Remove any existing "guest" parameter to ensure it's replaced
   params.delete("guest");
 
   if (guestNamesSet.size > 0) {
     let proxyInput = document.getElementById("proxyInput");
-    console.log("Add Proxy Select:", guestDisplay);
     proxyInput.value = guestDisplay;
     params.append("guest", Array.from(guestNamesSet).join(","));
   }
 
-  let practiceContext = document.getElementById("practiceContext");
   switch (context) {
     case "interview":
-      practiceContext.innerText = "Practice Interview";
       var roleInput = document.getElementById("roleInput");
       var orgInput = document.getElementById("orgInput");
       if (roleInput && roleInput.value) {
@@ -1486,32 +1276,30 @@ function updateUrl(context) {
       break;
 
     case "date":
-      practiceContext.innerText = "Practice Date:";
-      // Add any specific parameters for the "date" context here
+      //tbd
       break;
 
     case "meet":
-      practiceContext.innerText = "Practice Meeting:";
-      // Add any specific parameters for the "date" context here
+      //tbd
       break;
 
     case "debate":
-      practiceContext.innerText = "Practice Debate:";
       var topicInput = document.getElementById("topicInput");
       if (topicInput && topicInput.value) {
         params.append("topic", topicInput.value);
       }
       break;
-  }
 
-  // Function to select the checkbox based on selectedContext
+    case "adventure":
+      //tbd
+      break;
+  }
 
   if (isTtsEnabled) {
     params.append("voice", "true");
   }
 
   if (document.getElementById("urlInput")) {
-    // Function to replace the subdomain
     function replaceSubdomain(url, newSubdomain) {
       var urlObj = new URL(url);
       var hostnameParts = urlObj.hostname.split(".");
@@ -1524,12 +1312,8 @@ function updateUrl(context) {
       return urlObj.toString();
     }
 
-    // Replace the subdomain in the base URL
     var newUrl = replaceSubdomain(url, newProxy);
-    console.log("New URL:", newUrl);
-
     var queryString = params.toString().replace(/\+/g, " ");
-    console.log("Query String:", queryString);
 
     if (queryString) {
       regularUrl = newUrl + "?" + queryString;
@@ -1537,7 +1321,6 @@ function updateUrl(context) {
       regularUrl = newUrl;
     }
 
-    // Create a new URLSearchParams object without the 'guest' parameters
     var paramsWithoutGuests = new URLSearchParams();
     params.forEach((value, key) => {
       if (key !== "guest") {
@@ -1545,11 +1328,9 @@ function updateUrl(context) {
       }
     });
 
-    // Convert the paramsWithoutGuests to a query string
     var queryStringWithoutGuests = paramsWithoutGuests
       .toString()
       .replace(/\+/g, " ");
-    console.log("Query String Without Guests:", queryStringWithoutGuests);
 
     shareUrl = newUrl + "?" + queryStringWithoutGuests + "&share";
     trainingUrl = newUrl + "?training=true&" + queryString;
@@ -1557,7 +1338,6 @@ function updateUrl(context) {
   }
 }
 
-// Add event listeners to all checkboxes
 document
   .querySelectorAll("#addProxySelect .form-check-input")
   .forEach((checkbox) => {
@@ -1581,80 +1361,49 @@ function addButton(buttonElement, option) {
   const buttonName = option;
 
   if (!buttonName) {
-    // Optionally handle the case where no name is provided
     alert("Please enter a name.");
     return;
   }
 
-  // Hide the input field with the ID nameInput
-  // const nameInput = document.getElementById("nameInput");
-  // if (nameInput) {
-  //   nameInput.remove();
-  // }
-
-  // Get the container where the input field is located
   const inputContainer = document.getElementById("inputContainer");
   const checkboxContainer = document.getElementById("hostButtons");
   const checkboxSelect = document.getElementById("addProxySelect");
-  // Disable the button to prevent multiple clicks
+
   if (buttonElement) {
     buttonElement.classList.add("disabled");
   }
 
-  // Get the container where checkboxes will be added
-
-  // Create a div to wrap the checkbox and label
   const formCheckDiv = document.createElement("div");
   formCheckDiv.setAttribute("class", "form-check");
 
-  // Create a checkbox
   const checkbox = document.createElement("input");
   checkbox.setAttribute("type", "checkbox");
   checkbox.setAttribute("id", buttonName);
   checkbox.setAttribute("class", "form-check-input");
   checkbox.checked = true;
 
-  // Add a data-tag attribute to the checkbox
   const tag = "button-" + checkboxContainer.children.length;
   checkbox.setAttribute("data-tag", tag);
 
-  // Create a label for the checkbox
   const label = document.createElement("label");
   label.setAttribute("for", buttonName);
   label.setAttribute("class", "form-check-label");
   label.textContent = buttonName;
 
-  // Append the checkbox and label to the form-check div
   formCheckDiv.appendChild(checkbox);
   formCheckDiv.appendChild(label);
 
-  // Append the form-check div to the container
   checkboxContainer.appendChild(formCheckDiv);
 
-  // Show the Guest Proxies label if it's hidden
   const simulateLabel = document.getElementById("simulate");
   if (simulateLabel.style.display === "none") {
     simulateLabel.style.display = "block";
   }
-
-  // // Get the dropdown element
-  // const submitAsDropdown = document.getElementById('submitAs');
-
-  // // Create a new option element
-  // const option = document.createElement('option');
-  // option.value = buttonName;
-  // option.textContent = buttonName;
-
-  // // Append the new option to the dropdown
-  // submitAsDropdown.appendChild(option);
-
-  // Programmatically trigger change event on the new checkbox
   const changeEvent = new Event("change", { bubbles: true });
   checkbox.dispatchEvent(changeEvent);
 }
 
 // Event Listeners
-//---------------------------------------------------------
 
 document.getElementById("patreonButton").addEventListener("click", function () {
   window.open("https://patreon.com/Instinite", "_blank");
@@ -1682,19 +1431,20 @@ document
       currentPrompt = previousResponse;
       prompt.innerHTML += transcriptButtonHtml;
     }
+
     if (event.key === "Enter") {
-      event.preventDefault(); // Prevents the default action (inserting a newline)
+      event.preventDefault();
       clearTimeout(typingTimer);
-      // Try to find the button with the value of previousAvatar
+
       let button = document.querySelector(
         `#submitTo input[type="submit"][value="${previousAvatar}"]`
       );
 
-      // If the button doesn't exist or is disabled, find the first not disabled button
       if (!button || button.disabled) {
         let buttons = document.querySelectorAll(
           '#submitTo input[type="submit"]'
         );
+
         for (let btn of buttons) {
           if (!btn.disabled) {
             button = btn;
@@ -1703,12 +1453,12 @@ document
         }
       }
 
-      // If a button was found, click it
       if (button) {
         button.click();
       }
     }
   });
+
 document.getElementById("userInput").addEventListener("keypress", function () {
   clearTimeout(typingTimer);
   submitAs = document.getElementById("submitAs").value;
@@ -1718,7 +1468,6 @@ document.getElementById("userInput").addEventListener("keypress", function () {
     updateAvatar(avatar, "intrigued");
   }
   typingTimer = setTimeout(doneTyping, doneTypingInterval);
-  // }
 });
 
 document.getElementById("userInput").addEventListener("input", function () {
@@ -1731,18 +1480,17 @@ document.getElementById("userInput").addEventListener("input", function () {
   if (response) {
     document.getElementById("prompt").textContent = response;
   }
+
   let submitButtons = document.querySelectorAll('input[type="submit"]');
   submitButtons.forEach((button) => {
     if (button.value === submitAs) {
       button.disabled = true;
     } else {
-      button.disabled = false; // You might want to enable the other buttons
+      button.disabled = false;
     }
   });
-  // document.getElementById('botImage').src = "/img/" + avatar + "/smile";
 });
 
-// Update avatar based on the selected submitAs value
 document.getElementById("submitAs").addEventListener("change", function () {
   if (isRequestPending) return;
   if (speaking) return;
@@ -1781,201 +1529,191 @@ document
         console.error("Error:", error);
       });
   });
+async function initialize() {
+  try {
+    await preloadImages(proxies);
 
-document.addEventListener("DOMContentLoaded", (event) => {
-  submitButton = document.querySelector('.btn-group input[type="submit"]');
-  submitAsElement = document.getElementById("submitAs");
-  promptElement = document.getElementById("prompt");
+    submitButton = document.querySelector('.btn-group input[type="submit"]');
+    submitAsElement = document.getElementById("submitAs");
+    promptElement = document.getElementById("prompt");
+    const myTab = document.getElementById("myTab");
+    const tabDescription = document.getElementById("tabDescription");
 
-  if (context.alias !== "CT") {
-    // Link to create page
-    const createProxyLink = document.getElementById("createProxyLink");
-    const currentUrl = new URL(window.location.href);
-    currentUrl.pathname = "/create";
-    createProxyLink.href = currentUrl.toString();
-
-    settingsModal = new bootstrap.Modal(
-      document.getElementById("settingsModal")
-    );
-    document
-      .getElementById("proxySelect")
-      .addEventListener("change", function () {
-        const selectedValue = this.value;
-        if (selectedValue === "createNewProxy") {
-          // Open the "Create New Proxy" link in a new tab
-          window.open(createProxyLink.href, "_blank");
-          // Optionally, reset the dropdown to the first option
-          this.selectedIndex = 0;
-        }
-      });
-  }
-  const inputElement = document.getElementById("userInput");
-  const imageElement = document.getElementById("botImage");
-  inputElement.addEventListener("focus", function () {
-    imageElement.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
-
-  submitAs = submitAsElement ? submitAsElement.value : null;
-  submitTo = submitButton ? submitButton.value : "Guest";
-
-  if (submitAs in context.submitToOptions) {
-    avatar = submitAs;
-  } else {
-    avatar = submitTo;
-  }
-
-  hasPersonality = !proxies[submitTo].meet ? false : true;
-  hasDate = !proxies[submitTo].date ? false : true;
-  hasInterview = !proxies[submitTo].debate ? false : true;
-
-  feedbackModal = new bootstrap.Modal(document.getElementById("feedbackModal"));
-  saveButton = document.getElementById("save");
-
-  if (siteId === "custom" || context.alias === "CT") {
-    doneTypingInterval = 1000;
-  } else {
-    doneTypingInterval = 2000;
-  }
-
-  updateAvatar(Object.keys(proxies)[0], "friendly");
-  const botResponse = document.getElementById("botResponse");
-  botResponse.textContent = ``;
-
-  const dateElement = document.getElementById("date");
-  const now = new Date();
-  now.setFullYear(now.getFullYear() - 4); // Subtract four years
-
-  if (context.alias !== "CT") {
-    // Run on select change
-    document
-      .getElementById("contextSelect")
-      .addEventListener("change", updateContent);
-
-    // Enable save button on input if contentField is different from original content
-    document
-      .getElementById("contentField")
-      .addEventListener("input", function () {
-        const currentContent = document.getElementById("contentField").value;
-        const saveButton = document.getElementById("save");
-        saveButton.classList.remove("btn-success");
-        if (currentContent !== originalContent) {
-          saveButton.disabled = false;
-          // saveButton.style.visibility = "visible";
-        } else {
-          saveButton.disabled = true;
-          // saveButton.style.visibility = "hidden";
-        }
-      });
-
-    if (window.location.href.includes("voice=true")) {
-      console.log("Voice is enabled");
-      // If it does, run the toggleTtsState function
-      toggleTtsState();
+    function updateTabDescription(tabId) {
+      switch (tabId) {
+        case "practice-tab":
+          tabDescription.innerText = `Interact with other proxies as ${proxyName} and automatically refine your profile based on your input.`;
+          break;
+        case "share-tab":
+          tabDescription.innerText = `Copy a custom URL and share with others to interact with ${proxyName}. Settings will be inaccessible from this URL.`;
+          break;
+        default:
+          tabDescription.innerText = "";
+      }
     }
 
-    // Custom Context
-    const hostButtons = document.getElementById("hostButtons");
+    const initialActiveTab = myTab.querySelector(".nav-link.active");
+    if (initialActiveTab) {
+      updateTabDescription(initialActiveTab.id);
+    }
 
-    hostButtons.addEventListener("change", function (e) {
-      // const submitAsButton = document.getElementById("submitAs");
-      // const submitToButtonGroup = document.getElementById("submitTo");
-      // if (e.target.tagName === "INPUT" && e.target.type === "checkbox") {
-      //   const hostName = e.target.nextElementSibling.textContent;
-      //   const checkedBoxes = hostButtons.querySelectorAll(
-      //     'input[type="checkbox"]:checked'
-      //   );
-      //   // if (!e.target.checked && checkedBoxes.length === 0) {
-      //   //   // Prevent unchecking if it's the last remaining checked checkbox
-      //   //   e.preventDefault();
-      //   //   // alert('At least one host must be selected.');
-      //   //   e.target.checked = true; // Ensure the checkbox stays checked
-      //   //   return;
-      //   // }
-
-      //   if (e.target.checked) {
-      //     // Host is checked, add to submit buttons
-      //     const optionAs = document.createElement("option");
-      //     optionAs.value = hostName;
-      //     optionAs.textContent = hostName;
-      //     submitAsButton.appendChild(optionAs);
-      //     optionAs.selected = true;
-      //     // addButton();
-      //     updateAvatar(hostName, "intrigued");
-
-      //     getHosts();
-      //     const submitToButton = document.createElement("input");
-      //     submitToButton.setAttribute("type", "submit");
-      //     submitToButton.setAttribute("name", "go");
-      //     submitToButton.setAttribute("value", hostName);
-      //     submitToButton.setAttribute(
-      //       "class",
-      //       "btn btn-rounded btn-outline-dark btn-sm"
-      //     );
-      //     submitToButtonGroup.appendChild(submitToButton);
-      //   } else {
-      //     // Host is unchecked, remove from submit buttons
-      //     const optionToRemoveAs = Array.from(submitAsButton.options).find(
-      //       (option) => option.value === hostName
-      //     );
-      //     if (optionToRemoveAs) {
-      //       submitAsButton.removeChild(optionToRemoveAs);
-      //     }
-
-      //     const submitToButtonToRemove = Array.from(
-      //       submitToButtonGroup.children
-      //     ).find((button) => button.value === hostName);
-      //     if (submitToButtonToRemove) {
-      //       submitToButtonGroup.removeChild(submitToButtonToRemove);
-      //     }
-      //   }
-      // }
-      updateUrl(document.getElementById("contextSelect").value.toLowerCase());
+    myTab.addEventListener("shown.bs.tab", function (event) {
+      const activatedTab = event.target; // Newly activated tab
+      updateTabDescription(activatedTab.id);
     });
-    const contentField = document.getElementById("contentField");
-    if (contentField) {
-      contentField.addEventListener("input", toggleTraining);
-    }
-    selectProxyBasedOnContext(document.getElementById("contextSelect").value);
-    // Parameters
-    // ----------------------------
-    var urlParams = new URLSearchParams(window.location.search);
 
-    var name = decodeURIComponent(urlParams.get("name") || "");
+    if (context.alias !== "CT") {
+      const createProxyLink = document.getElementById("createProxyLink");
+      const currentUrl = new URL(window.location.href);
+      currentUrl.pathname = "/create";
+      createProxyLink.href = currentUrl.toString();
 
-    if (name) {
-      document.getElementById("nameInput").value = name;
-    }
-
-    // Interview
-    var role = decodeURIComponent(urlParams.get("role") || "");
-    var org = decodeURIComponent(urlParams.get("org") || "");
-
-    if (role) {
-      document.getElementById("roleInput").value = role;
+      settingsModal = new bootstrap.Modal(
+        document.getElementById("settingsModal")
+      );
+      document
+        .getElementById("proxySelect")
+        .addEventListener("change", function () {
+          const selectedValue = this.value;
+          if (selectedValue === "createNewProxy") {
+            window.open(createProxyLink.href, "_blank");
+            this.selectedIndex = 0;
+          }
+        });
     }
 
-    if (org) {
-      document.getElementById("orgInput").value = org;
+    function hideAlert(alertElement) {
+      alertElement.classList.remove("show");
+      alertElement.style.zIndex = "";
     }
 
-    // Debate
-    var topic = decodeURIComponent(urlParams.get("topic") || "");
+    document
+      .querySelector("#contextUpdated .btn-close")
+      .addEventListener("click", function () {
+        hideAlert(document.getElementById("contextUpdated"));
+      });
 
-    if (topic) {
-      document.getElementById("topicInput").value = topic;
+    const inputElement = document.getElementById("userInput");
+    const imageElement = document.getElementById("botImage");
+    inputElement.addEventListener("focus", function () {
+      imageElement.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    submitAs = submitAsElement ? submitAsElement.value : null;
+    submitTo = submitButton ? submitButton.value : "Guest";
+
+    if (submitAs in context.submitToOptions) {
+      avatar = submitAs;
+    } else {
+      avatar = submitTo;
     }
 
-    updateContext();
+    hasPersonality = !proxies[submitTo].meet ? false : true;
+    hasDate = !proxies[submitTo].date ? false : true;
+    hasInterview = !proxies[submitTo].debate ? false : true;
 
-    preloadImages(proxies);
+    feedbackModal = new bootstrap.Modal(
+      document.getElementById("feedbackModal")
+    );
+    saveButton = document.getElementById("save");
 
-    // Run on page load
-    updateUrl(String(siteId));
-    updateContent();
-    processParameters();
-    toggleTraining();
-    document.body.classList.toggle("dark-mode");
+    if (siteId === "custom" || context.alias === "CT") {
+      doneTypingInterval = 1000;
+    } else {
+      doneTypingInterval = 2000;
+    }
+
+    updateAvatar(Object.keys(proxies)[0], "friendly");
+    const botResponse = document.getElementById("botResponse");
+    botResponse.textContent = ``;
+
+    const dateElement = document.getElementById("date");
+    const now = new Date();
+    now.setFullYear(now.getFullYear() - 4); // Subtract four years
+    if (context.alias !== "CT") {
+      // Run on select change
+      document
+        .getElementById("contextSelect")
+        .addEventListener("change", updateContent);
+
+      // Enable save button on input if contentField is different from original content
+      document
+        .getElementById("contentField")
+        .addEventListener("input", function () {
+          const currentContent = document.getElementById("contentField").value;
+          const saveButton = document.getElementById("save");
+          saveButton.classList.remove("btn-success");
+          if (currentContent !== originalContent) {
+            saveButton.disabled = false;
+          } else {
+            saveButton.disabled = true;
+          }
+        });
+
+      if (window.location.href.includes("voice=true")) {
+        console.log("Voice is enabled");
+        toggleTtsState();
+      }
+
+      const hostButtons = document.getElementById("hostButtons");
+
+      hostButtons.addEventListener("change", function (e) {
+        updateUrl(document.getElementById("contextSelect").value.toLowerCase());
+      });
+      const contentField = document.getElementById("contentField");
+      if (contentField) {
+        contentField.addEventListener("input", toggleTraining);
+      }
+      selectProxyBasedOnContext(document.getElementById("contextSelect").value);
+
+      // Parameters
+      // ----------------------------
+      var urlParams = new URLSearchParams(window.location.search);
+
+      var name = decodeURIComponent(urlParams.get("name") || "");
+
+      if (name) {
+        document.getElementById("nameInput").value = name;
+      }
+
+      // Interview
+      var role = decodeURIComponent(urlParams.get("role") || "");
+      var org = decodeURIComponent(urlParams.get("org") || "");
+
+      if (role) {
+        document.getElementById("roleInput").value = role;
+      }
+
+      if (org) {
+        document.getElementById("orgInput").value = org;
+      }
+
+      // Debate
+      var topic = decodeURIComponent(urlParams.get("topic") || "");
+
+      if (topic) {
+        document.getElementById("topicInput").value = topic;
+      }
+
+      document.querySelectorAll("input.form-check-input").forEach((checkbox) => {
+        checkbox.addEventListener("change", updateMeetProxyButtonState);
+      });
+    
+      updateMeetProxyButtonState();
+      updateContext();
+
+      updateUrl(String(siteId));
+      updateContent();
+      processParameters();
+      toggleTraining();
+      document.body.classList.toggle("dark-mode");
+    }
+  } catch (error) {
+    console.error("Error preloading images:", error);
   }
+}
+document.addEventListener("DOMContentLoaded", (event) => {
+  initialize();
 });
 
 window.onload = function () {};

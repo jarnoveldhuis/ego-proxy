@@ -1,24 +1,26 @@
 // 1. IMPORTS AND CONFIGURATIONS
-const express = require("express");
+
+// Core modules
 const path = require("path");
+const http = require("http");
+
+// Third-party modules
+const express = require("express");
 const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
-const http = require("http");
 const WebSocket = require("ws");
 const axios = require("axios");
 const nodemailer = require("nodemailer");
-// const fs = require("fs");
-// const sharp = require("sharp");
-const potrace = require("potrace");
-require("dotenv").config();
 const rateLimit = require("express-rate-limit");
-var Airtable = require("airtable");
+const Airtable = require("airtable");
+require("dotenv").config();
 
 // Constants
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const port = process.env.PORT || 3001;
+
 const API_ENDPOINT =
   process.env.OPENAI_API_ENDPOINT ||
   "https://api.openai.com/v1/chat/completions";
@@ -27,23 +29,24 @@ const ELEVENLABS_API_ENDPOINT =
   "https://api.elevenlabs.io/v1/text-to-speech/GBv7mTt0atIp3Br8iCZE";
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
 const [email, password] = process.env.EMAIL_CREDENTIALS.split(":");
-console.log("Email:", email); 
+
 const HEADERS = {
   Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
   "Content-Type": "application/json",
 };
+
 const ELEVENLABS_HEADERS = {
   "xi-api-key": process.env.ELEVENLABS_API_KEY,
   "Content-Type": "application/json",
 };
+
+// VARIABLES
 const clients = {};
-var base = new Airtable({ apiKey: AIRTABLE_TOKEN }).base("appGJeYbeaiWUaxhe");
-const ct = process.env.CT;
-let globalCast;
+const base = new Airtable({ apiKey: AIRTABLE_TOKEN }).base("appGJeYbeaiWUaxhe");
+const CT = process.env.CT;
 let globalDataStore = {};
-let subdomain;
-let progress;
-let storyProgress;
+let gptModel;
+let proxyList = [];
 
 // MIDDLEWARE
 app.use(express.json());
@@ -51,7 +54,6 @@ app.use(express.static(path.join(__dirname, "public")));
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "../views"));
 app.use(express.static(path.join(__dirname, "../client")));
-// Environment variables and API configuration
 
 // Rate Limiter
 const apiLimiter = rateLimit({
@@ -86,24 +88,19 @@ const ELEVENLABS_ENDPOINTS = {
 };
 
 // Variables
-let currentSpeaker = ""; // default speaker
+let currentSpeaker = "";
 let voice = "";
-let transcriptThreshold = 1000;
-let transcriptSummarized = false;
+const transcriptThreshold = 1500;
 
-// 2. ROUTES
-
-// ?
-const { send } = require("process");
-const e = require("express");
+// 2. ROUTES AND HANDLERS
 
 // Home Route
 app.get("/", async (req, res) => {
-  let proxyDomain = req.get("host");
-  let parts = req.hostname.split(".");
+  const proxyDomain = req.get("host");
+  const parts = req.hostname.split(".");
+  const subdomain = parts.length > 1 ? parts[0] : "";
+  let protocol = req.protocol;
 
-  subdomain = parts.length > 1 ? parts[0] : "";
-  let protocol = process.env.NODE_ENV === "production" ? "https" : req.protocol;
   if (req.headers["x-forwarded-proto"]) {
     protocol = req.headers["x-forwarded-proto"].split(",")[0];
   }
@@ -111,100 +108,84 @@ app.get("/", async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     protocol = "https";
   }
-  let url = protocol + "://" + req.get("host") + req.originalUrl;
-  // Check if the subdomain exists
-  if (subdomain != "" && subdomain != "ego-proxy") {
-    fetchProxies([subdomain]).then((proxy) => {
+
+  const url = protocol + "://" + req.get("host") + req.originalUrl;
+
+  if (subdomain && subdomain !== "ego-proxy") {
+    try {
+      const proxy = await fetchProxies([subdomain]);
       if (!proxy || proxy.length === 0) {
         console.error("No proxy data found");
-        return res.render("create", {
-          proxyDomain: proxyDomain,
-          progress: progress,
-        });
+        return res.render("create", { proxyDomain });
       }
       res.redirect(url + "meet");
-    });
+    } catch (error) {
+      console.error("Error fetching proxies:", error);
+      res.render("create", { proxyDomain });
+    }
   } else {
-    res.render("create", { proxyDomain: proxyDomain, progress: progress });
+    res.render("create", { proxyDomain });
   }
 });
 
 // SiteId Route
 app.get("/:siteId", async (req, res) => {
-  const siteIdDecoy = req.params.siteId;
-  // Exclude favicon.ico requests
-  if (
-    !siteIdDecoy ||
-    siteIdDecoy.trim() === "" ||
-    siteIdDecoy === "undefined" ||
-    siteIdDecoy === "favicon.ico"
-  ) {
-    console.log("No siteId found or favicon.ico request");
+  const siteId = req.params.siteId;
+
+  if (!siteId || ["undefined", "favicon.ico"].includes(siteId.trim())) {
+    console.log("Invalid siteId or favicon.ico request");
     return res.status(404).send("Not found");
   }
 
   const parts = req.hostname.split(".");
-  const siteId = siteIdDecoy;
-  let subdomain = "";
+  const subdomain =
+    parts.length > 1 && parts[0] !== "ego-proxy" ? parts[0] : "";
 
-  // Check for subdomain
-  if (parts.length > 1 && parts[0] !== "ego-proxy") {
-    subdomain = parts[0];
-  }
-
-  if (process.env.CT === siteId) {
-    gptModel = "gpt-4";
-  }
+    if (CT === siteId) {
+      gptModel = "gpt-4";
+    }
 
   console.log(`GPT Model: ${gptModel}`);
 
-  if (subdomain != "" && subdomain != "ego-proxy") {
-    console.log("Subdomain:", subdomain);
-  } else {
-    console.log("No subdomain detected");
-  }
-
-  // Extract and decode the guest parameter
   const guests = req.query.guest
     ? decodeURIComponent(req.query.guest).split(",")
     : [];
-
-  // Log the guests array
-  // console.log("Guests:", guests);
 
   try {
     const data = await fetchContextAndProxies(siteId, subdomain, guests);
     if (!data) {
       console.log("No matching records found");
-      return res.render("create"); // Handle no matching records case
+      return res.render("create");
     }
+
     data.transcriptThreshold = transcriptThreshold;
     data.hasShareParam = req.query.hasOwnProperty("share");
 
-    // Convert the proxies object to lowercase keys
-    let lowerCaseProxies = Object.keys(data.proxies).reduce((result, key) => {
+    const lowerCaseProxies = Object.keys(data.proxies).reduce((result, key) => {
       result[key.toLowerCase()] = data.proxies[key];
       return result;
     }, {});
+
     updateContextMessages(siteId, subdomain, lowerCaseProxies, data);
-    cleanDataForPublic(data); // Prepare data for public use by removing sensitive info
-    res.render("chat", data); // Render template with cleaned data
+    cleanDataForPublic(data);
+    res.render("chat", data);
   } catch (err) {
     console.error(err.message);
-    res.render("create"); // Render create template if there is an error
+    res.render("create");
   }
 });
 
 // Proxy Update Route
 app.post("/update-proxy", async (req, res) => {
-  let parts = req.hostname.split(".");
-  let subdomain = parts.length > 1 ? parts[0] : "";
+  const parts = req.hostname.split(".");
+  const subdomain = parts.length > 1 ? parts[0] : "";
   const { contentId, content } = req.body;
+  
   try {
-    const proxyData = await findProxyDataByName(subdomain); // Ensure subdomain is defined
+    const proxyData = await findProxyDataByName(subdomain);
     if (proxyData) {
       const updatedRecord = await base("Proxies").update(proxyData.id, {
-        [contentId]: content, // Dynamic field update based on contentId
+        [contentId]: content,
       });
       res.json({
         success: true,
@@ -224,39 +205,25 @@ app.post("/update-proxy", async (req, res) => {
 
 // Chat Route
 app.post("/ask/", async (req, res) => {
-  const {
-    question,
-    submitAs,
-    submitTo,
-    transcript,
-    siteId,
-    hosts,
-    training,
-    tutorial,
-  } = req.body;
+  const { question, submitAs, submitTo, transcript, siteId, guests, training, tutorial } = req.body;
+
   if (!question || !submitTo || !transcript || !siteId) {
     return res.status(400).send({ error: "Missing required fields" });
   }
-  const dataForSiteId = globalDataStore[siteId];
 
+  const dataForSiteId = globalDataStore[siteId];
   if (!dataForSiteId) {
     return res.status(400).send({ error: "Data not found for siteId" });
   }
-  emotions = "Angry, Confused, Joy, Laugh, Sad, Fear, Disgust, Embarassed";
-  // Similar:
-  // Embarassed, Anger, Disgust
-  // Joy
-  const userMessage = `Add a single line of dialogue to this script to advance the plot. Never add more than one line of dialogue. Each line should express one of the following emotions: ${emotions}. Include the relevant emotions in parentheses at the very end of your response. For example:
 
-I'm feeling great today! (Joy):
+  const emotions =
+    "Angry, Confused, Laugh, Sad, Fear, Disgust, embarrassed";
+  const userMessage = `Add a single line of dialogue to this script to advance the plot. Never add more than one line of dialogue. Each line should express one of the following emotions: ${emotions}.\nBegin your response with "${submitTo}:" and include the relevant emotions in parentheses at the very end of your response. For example:\n${submitTo}: I'm feeling great today! (Joy)\nDo not use any other expressions than the ones listed and do not use any of these emotions twice in a row. Never change the casing of the name. `;
 
-Do not use any other expressions than the ones listed and do not use any of these emotions twice in a row. \nCharacters: ${globalCast}\n
-${storyProgress}`;
   const proxies = dataForSiteId.proxies;
   const context = dataForSiteId.context;
   const profile = proxies[submitAs] ? proxies[submitAs][siteId] : "";
   currentSpeaker = submitTo;
-  previousSpeaker = submitAs;
   const currentProxy = proxies[currentSpeaker] || {};
   voice = ELEVENLABS_API_ENDPOINT;
 
@@ -267,35 +234,21 @@ ${storyProgress}`;
     voice = ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity];
   } else {
     console.log("Generic speaker:", currentSpeaker);
-    voice = ELEVENLABS_API_ENDPOINT;
   }
 
-  let parts = req.hostname.split(".");
-  let subdomain = parts.length > 1 ? parts[0] : "";
-  if (!dataForSiteId) {
-    return res.status(400).send({ error: "Data not found for siteId" });
-  }
-  // Attempt to summarize the transcript if conditions are met
+  const parts = req.hostname.split(".");
+  const subdomain = parts.length > 1 ? parts[0] : "";
+
   console.log("Transcript length:", transcript.length);
+
   if (transcript.length > transcriptThreshold && (training || tutorial)) {
     try {
       console.log("Transcript summary conditions met. Summarizing...");
-      transcriptSummary = await summarizeTranscript(
-        transcript,
-        siteId,
-        subdomain,
-        profile
-      );
-      transcriptSummarized = true;
+      const transcriptSummary = await summarizeTranscript(transcript, siteId, subdomain, profile);
       console.log("Transcript summarized successfully: ", transcriptSummary);
 
-      // Update the database
-      console.log("Finding proxy name...");
       let proxyData = await findProxyDataByName(subdomain);
 
-      column = siteId;
-
-      console.log("Updating database with transcript summary...");
       if (proxyData) {
         await base("Proxies").update(proxyData.id, {
           [siteId]: transcriptSummary,
@@ -306,34 +259,25 @@ ${storyProgress}`;
           error: `No matching row found for proxyName: ${subdomain}`,
         });
       }
-      console.log(
-        `Updating local proxyData for " ${subdomain}  data with transcript summary...`
-      );
-      proxyData = await findProxyDataByName(subdomain);
 
-      // Update the local data store
+      proxyData = await findProxyDataByName(subdomain);
       proxies[proxyData.Proxy].message = proxyData.message;
 
       const proxyMessage =
-        `${currentProxy.message} This character has just updated it's personality.` ||
+        `${currentProxy.message} This character has just updated its personality.` ||
         "Default speaker message";
 
       context.message = `${proxyData.Proxy} has updated itself to use the following personality: "${transcriptSummary}"\n ${proxyData.Proxy} will introduce themself, provide an overview of their personality and keep the conversation flowing with questions.\n`;
 
-      const contextMessage = context.message;
-
-      const systemMessage = `${proxyMessage}\nScene: ${contextMessage}\n`;
+      const systemMessage = `${proxyMessage}\n ${context.message}\n`;
 
       const freshUserMessage = `${userMessage}${context.message}`;
-      // Process and send response
+
       const payload = createPayload(systemMessage, freshUserMessage);
-      // console.log("Payload:", payload);
+      console.log("Training Complete Payload:", payload);
       console.log("Getting assistant response...");
       const assistantMessage = await getAssistantResponse(payload);
-      // calculateAndLogCost(userMessage, assistantMessage);
-      const currentURL = req.protocol + "://" + req.get("host") + "/" + siteId;
-      const profileURL = req.protocol + "://" + req.get("host");
-      
+
       res.send({
         personalityUpdated: true,
         transcriptSummary: transcriptSummary,
@@ -347,87 +291,33 @@ ${storyProgress}`;
     const contextMessage =
       dataForSiteId.context.message || "Default general message";
     const proxyMessage = currentProxy.message || "";
-    const proxyContext = proxies[currentSpeaker][siteId] || "";
 
     const progress = Math.floor(
       (transcript.length / transcriptThreshold) * 100
     );
-    const storyProgress =
-      siteId === "meet" ? ` The story is a surreal comedy with a twist ending. The orientaion is now ` + progress + `% complete. Use the transcript thus far to inform your personality.\n` : "";
-    const previousProxy = proxies[previousSpeaker] || "";
+    let storyProgress = `The story is now ${progress}% complete. Use the transcript thus far and Joseph Campbells' Hero's journey framework to inform what happens next.\n`;
 
-    if (previousProxy[siteId]) {
-      previousProxyProfile =
-        " Here is the profile of the person you're speaking to: \n" +
-        previousProxy[siteId];
-    } else {
-      previousProxyProfile = "";
-    }
-
-    const systemMessage = `${proxyMessage}${contextMessage}`;
+    const previousProxy = proxies[submitAs] || "";
+    const previousProxyProfile = previousProxy[siteId]
+      ? " Here is the profile of the person you're speaking to: \n" +
+        previousProxy[siteId]
+      : "";
+    let characters = proxyList.filter(proxy => proxy.toLowerCase() !== "you");
+    const systemMessage = `${proxyMessage}\n${contextMessage}\nCharacters: ${characters.join(", ")}\n`;
 
     const payload = createPayload(
-      systemMessage + storyProgress + previousProxyProfile,
-      userMessage + transcript
+      systemMessage + previousProxyProfile,
+      storyProgress + userMessage + transcript
     );
-    // console.log(payload)
+    console.log("Response Payload:", payload);
     const assistantMessage = await getAssistantResponse(payload);
     res.send({ answer: assistantMessage });
   }
 });
 
-async function generateContent(transcript, context, systemContent) {
-  const payload = {
-    model: gptModel,
-    messages: [
-      {
-        role: "system",
-        content: systemContent,
-      },
-      { role: "user", content: transcript },
-    ],
-    temperature: 1,
-    max_tokens: 500,
-    top_p: 1,
-    frequency_penalty: 0.5,
-    presence_penalty: 0,
-  };
-
-  try {
-    const response = await axios.post(API_ENDPOINT, payload, {
-      headers: HEADERS,
-    });
-    const summary = response.data.choices[0].message.content.trim();
-    return summary;
-  } catch (error) {
-    console.error("Error while generating content:", error);
-    return "Failed to generate content.";
-  }
-}
-
-async function summarizeTranscript(transcript, context, user, profile) {
-  revise = profile
-    ? ` Incorporate details from their previous profile:
-  "${profile}".`
-    : "";
-  if (context === "meet") {
-    systemContent = `Use the responses by 'you' in this transcript to create a character portrait in 100 words. Include speech patterns. Do not take everything at face value. Look for clues about unspoken traits like a psycho-analyst. Write the summary in the tone of Alan Watts. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves. Only include the prompt, do not include a line labelling it as a prompt. ${revise}`;
-  } else if (context === "interview") {
-    systemContent = `Use the responses in this transcript to generate a concise summary of ${user}'s professional experience. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves during an interview. Do not use Markdown.${revise}`;
-  } else if (context === "date") {
-    systemContent = `Use the responses in this transcript to generate a dating profile for ${user}. Do not use Markdown.${revise}`;
-  } else if (context === "debate") {
-    systemContent = `Use the responses in this transcript to create a profile of ${user}'s beliefs.  Do not use Markdown.${revise}`;
-  }
-  // console.log("systemContent:", systemContent);
-  return await generateContent(transcript, context, systemContent);
-}
-
 // Feedback Route
 app.post("/send-feedback", (req, res) => {
   const { feedback } = req.body;
-  console.log("Feedback:", feedback);
-  console.log("Email:", email);
 
   const mailOptions = {
     from: `"Ego-Proxy" <${email}>`,
@@ -439,7 +329,9 @@ app.post("/send-feedback", (req, res) => {
   transporter.sendMail(mailOptions, function (error, info) {
     if (error) {
       console.error("Error sending email:", error);
-      res.status(500).json({ message: "Error sending email", error: error.message });
+      res
+        .status(500)
+        .json({ message: "Error sending email", error: error.message });
     } else {
       console.log("Email sent: " + info.response);
       res.status(200).json({ message: "Feedback sent successfully" });
@@ -457,8 +349,6 @@ app.post("/synthesize", apiLimiter, async (req, res) => {
         .send({ error: "Missing text field in request body" });
     }
 
-    // Select the ElevenLabs endpoint URL based on the current speaker
-    // voice = ELEVENLABS_ENDPOINTS[currentSpeaker]
     console.log("voice:", voice);
     console.log("currentSpeaker:", currentSpeaker);
 
@@ -486,6 +376,102 @@ app.post("/synthesize", apiLimiter, async (req, res) => {
   }
 });
 
+// Configure multer for file storage
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
+app.post("/create-proxy", upload.single("file"), async (req, res) => {
+  const { proxyName, genderIdentity, proxyEmail } = req.body;
+  const ethnicity =
+    req.body.ethnicity !== "Other"
+      ? req.body.ethnicity
+      : req.body.otherEthnicity;
+
+  try {
+    const nameExists = await checkNameExists(proxyName);
+    if (nameExists) {
+      console.log("Name already exists, sending 409 response");
+      return res.status(409).json({ message: "Name is already in use" });
+    }
+
+    const base64String = req.file.buffer.toString("base64");
+    const photoDescription = await describeImageBase(base64String);
+
+    if (photoDescription.toLowerCase().includes("error")) {
+      console.log("Error detected in photo description, sending 400 response");
+      return res.status(409).json({
+        message: photoDescription + " Please try again with a different photo.",
+      });
+    }
+
+    const clientId = req.body.clientId;
+    const ws = clients[clientId];
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.log("WebSocket connection not found, sending 404 response");
+      return res
+        .status(404)
+        .json({ message: "WebSocket connection not found." });
+    }
+
+    ws.send(
+      JSON.stringify({
+        event: "processingStarted",
+        message: "Update about your request...",
+      })
+    );
+    res.status(202).json({
+      message: "Processing started, you will be notified upon completion.",
+    });
+
+    initiateProxyCreation(req, ws, photoDescription, ethnicity).catch(
+      (error) => {
+        console.error("Error in background processing:", error);
+        ws.send(JSON.stringify({ error: "Error in background processing" }));
+      }
+    );
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// WebSocket Connection
+wss.on("connection", (ws) => {
+  const clientId = uuidv4();
+  clients[clientId] = ws;
+  console.log(`New client connected with ID: ${clientId}`);
+  ws.send(JSON.stringify({ type: "clientId", clientId }));
+
+  ws.on("message", (message) => {
+    try {
+      const data = JSON.parse(message);
+      if (data.event === "ping") {
+        ws.send(JSON.stringify({ event: "pong" }));
+      }
+    } catch (error) {
+      console.error("Error parsing WebSocket message:", error);
+    }
+  });
+});
+
+// Start Server
+server.listen(port, () => {
+  console.log(`Server running on http://localhost:${port}`);
+});
+
+// Set GPT Model based on environment
+if (process.env.NODE_ENV === "development") {
+  gptModel = "gpt-4o";
+} else {
+  gptModel = "gpt-4";
+}
+console.log("Model:", gptModel);
+
+// 3. FUNCTIONS
+
+// Update Context Messages
 function updateContextMessages(
   siteId,
   subdomain,
@@ -516,98 +502,7 @@ function updateContextMessages(
   }
 }
 
-// Configure multer for file storage
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
-
-// Serve static files from the "uploads" directory
-app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
-
-app.post("/create-proxy", upload.single("file"), async (req, res) => {
-  const proxyName = req.body.proxyName;
-  genderIdentity = req.body.genderIdentity;
-  const ethnicity = req.body.ethnicity !== "Other" ? req.body.ethnicity : req.body.otherEthnicity;
-  // console.log("ethnicity", ethnicity)
-  let nameExists;
-  try {
-    nameExists = await checkNameExists(proxyName);
-    if (nameExists) {
-      throw new Error("Name is already in use");
-    }
-  } catch (error) {
-    console.error("Error:", error);
-    // Handle the error
-  }
-  if (nameExists) {
-    console.log("Name already exists, sending 409 response");
-    return res.status(409).json({ message: "Name is already in use" });
-  }
-
-  const base64String = req.file.buffer.toString("base64");
-  let photoDescription = await describeImageBase(base64String);
-
-  if (photoDescription.toLowerCase().includes("error")) {
-    console.log("Error detected in photo description, sending 400 response");
-    res.status(409).json({
-      message: photoDescription + " Please try again with a different photo.",
-    });
-    return;
-  }
-
-  const clientId = req.body.clientId;
-  const ws = clients[clientId];
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    console.log("WebSocket connection not found, sending 404 response");
-    return res.status(404).json({ message: "WebSocket connection not found." });
-  }
-
-  ws.send(
-    JSON.stringify({
-      event: "processingStarted",
-      message: "Update about your request...",
-    })
-  );
-  res.status(202).json({
-    message: "Processing started, you will be notified upon completion.",
-  });
-
-  initiateProxyCreation(req, ws, photoDescription, ethnicity).catch((error) => {
-    console.error("Error in background processing:", error);
-    ws.send(JSON.stringify({ error: "Error in background processing" }));
-  });
-});
-
-// WebSocket Connection
-wss.on("connection", (ws) => {
-  const clientId = uuidv4(); // Generate a new UUID for the client
-  // Store the clientId and ws in your tracking object or map
-  clients[clientId] = ws;
-  console.log(`New client connected with ID: ${clientId}`);
-https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.interviewmagazine.com%2Fculture%2Fstavros-halkias-on-ozempic-hunter-biden-and-paneras-charged-lemonade&psig=AOvVaw2Qd4vHrcWVwLGhzBEpSJJf&ust=1726088704197000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCLCIg9ajuYgDFQAAAAAdAAAAABAE
-  // Optionally, send the clientId back to the client
-  ws.send(JSON.stringify({ type: "clientId", clientId }));
-
-  ws.on("message", (message) => {
-    const data = JSON.parse(message);
-    if (data.event === "ping") {
-      ws.send(JSON.stringify({ event: "pong" }));
-    }
-  });
-});
-
-server.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-});
-
-if (process.env.NODE_ENV === "development") {
-  gptModel = "gpt-4o";
-} else {
-  gptModel = "gpt-4";
-}
-console.log("Model:", gptModel);
-
-// 3. FUNCTIONS
-// description prompt. Begin with an overall impression. Next include face shape, nose shape, eye color, complexion, hair color/style/length, facial hair, eyebrows, Lips, perceived age, build, and any other relevent details.
+// Describe Image Base
 async function describeImageBase(base64) {
   const apiEndpoint = "https://api.openai.com/v1/chat/completions";
   const response = await axios.post(
@@ -650,7 +545,6 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
     if (!airTableBase) {
       throw new Error("Site ID not found in any base");
     }
-    console.log("Airtable base:", airTableBase);
 
     const records = await base(airTableBase)
       .select({
@@ -658,11 +552,11 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
       })
       .firstPage();
     if (records.length === 0) {
-      return null; // No records found
+      return null;
     }
 
     const context = records[0].fields;
-    if (siteId !== ct) {
+    if (siteId !== CT) {
       if (
         !context.submitAsOptions.includes("You") &&
         !context.submitAsOptions.includes("Interviewer")
@@ -680,20 +574,18 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
       );
     }
 
-    // console.log("Updated submitToOptions:", context.submitToOptions);
     const publicProxyNames = await fetchPublicProxyNames(subdomain);
     const yourProxyNames = await fetchYourProxyNames(subdomain);
 
-    const proxyList = [
+    proxyList = [
       ...new Set([
         ...context.submitToOptions,
         ...context.submitAsOptions,
         ...guests,
       ]),
     ];
+
     const proxies = await fetchProxies(proxyList);
-    // const submitAsProxies = await fetchProxies(context.submitAsOptions);
-    // const guestProxies = await fetchProxies(guests);
 
     context.submitToOptions = [
       ...new Set([...context.submitToOptions, ...guests]),
@@ -702,25 +594,15 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
     context.submitAsOptions = [
       ...new Set([...context.submitAsOptions, ...guests]),
     ];
-  
+
     const data = {
       context: context,
       proxies: proxies.reduce((acc, proxy) => {
         acc[proxy.fields.Proxy] = proxy.fields;
         return acc;
       }, {}),
-      // submitAsProxies: submitAsProxies.reduce((acc, proxy) => {
-      //   acc[proxy.fields.Proxy] = proxy.fields;
-      //   return acc;
-      // }, {}),
-      publicProxies: publicProxyNames.reduce((acc, proxy) => {
-        acc.push(proxy);
-        return acc;
-      }, []),
-      yourProxies: yourProxyNames.reduce((acc, proxy) => {
-        acc.push(proxy);
-        return acc;
-      }, []),
+      publicProxies: publicProxyNames,
+      yourProxies: yourProxyNames,
     };
 
     context.submitToOptions = context.submitToOptions.map((option) => {
@@ -741,10 +623,7 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
 
     globalDataStore[siteId] = JSON.parse(JSON.stringify(data));
 
-    globalCast = [
-      ...new Set([...context.submitToOptions, ...context.submitAsOptions]),
-    ].join(", ");
-    return data; // Return the data along with any global updates
+    return data;
   } catch (err) {
     throw new Error("Error fetching context and proxies: " + err.message);
   }
@@ -759,23 +638,22 @@ function fetchPublicProxyNames(subdomain) {
       })
       .all((err, publicProxies) => {
         if (err) {
-          reject(err); // Handle errors
+          reject(err);
         } else {
           const publicProxyNames = publicProxies
             .map((proxy) => proxy.fields.Proxy)
             .filter(
               (proxyName) => proxyName.toLowerCase() !== subdomain.toLowerCase()
             );
-          resolve(publicProxyNames); // Resolve with the filtered names of public proxies
+          resolve(publicProxyNames);
         }
       });
   });
 }
 
-// Function to fetch proxy names associated with the same email as the given siteId
+// Fetch your proxy names
 function fetchYourProxyNames(subdomain) {
   return new Promise((resolve, reject) => {
-    // First, find the email associated with the given siteId
     base("Proxies")
       .select({
         filterByFormula: `{siteId} = '${subdomain}'`,
@@ -783,22 +661,21 @@ function fetchYourProxyNames(subdomain) {
       })
       .firstPage((err, records) => {
         if (err) {
-          return reject(err); // Handle errors
+          return reject(err);
         }
         if (records.length === 0) {
-          return resolve([]); // No records found
+          return resolve([]);
         }
 
-        const email = records[0].fields.email; // Assuming the email field is named 'Email'
+        const email = records[0].fields.email;
 
-        // Now, find all proxies associated with this email
         base("Proxies")
           .select({
             filterByFormula: `{email} = '${email}'`,
           })
           .all((err, proxies) => {
             if (err) {
-              return reject(err); // Handle errors
+              return reject(err);
             }
             const proxyNames = proxies
               .map((proxy) => proxy.fields.Proxy)
@@ -806,16 +683,16 @@ function fetchYourProxyNames(subdomain) {
                 (proxyName) =>
                   proxyName.toLowerCase() !== subdomain.toLowerCase()
               );
-            resolve(proxyNames); // Resolve with the filtered names of proxies
+            resolve(proxyNames);
           });
       });
   });
 }
 
-// REDUNDAT - Fetch single proxy data by name.
-async function findProxyDataByName(proxyName) {
+// Find proxy data by name
+function findProxyDataByName(proxyName) {
   return new Promise((resolve, reject) => {
-    let queryOptions = {
+    const queryOptions = {
       filterByFormula: `LOWER({Proxy})="${proxyName.toLowerCase()}"`,
       maxRecords: 1,
     };
@@ -829,24 +706,23 @@ async function findProxyDataByName(proxyName) {
         }
         if (records.length === 0) {
           console.log("No matching record found");
-          resolve(null); // Explicitly resolve to null to indicate no record was found.
+          resolve(null);
           return;
         }
-        let record = records[0];
-        let data = {
+        const record = records[0];
+        const data = {
           id: record.id,
-          Message: record.fields.message, // Assuming 'Message' is the field name in Airtable
-          Proxy: record.fields.Proxy, // Assuming 'Proxy' is another field name
+          message: record.fields.message,
+          Proxy: record.fields.Proxy,
         };
         resolve(data);
       });
   });
 }
 
-//Fetch all proxies for the siteId and sort
+// Fetch all proxies for the siteId and sort
 function fetchProxies(submitOptions) {
   return new Promise((resolve, reject) => {
-    // Building the formula correctly
     const formula = submitOptions
       .map((option) => `LOWER({Proxy}) = LOWER('${option}')`)
       .join(", ");
@@ -857,32 +733,29 @@ function fetchProxies(submitOptions) {
       })
       .firstPage((err, proxies) => {
         if (err) {
-          reject(err); // Handle errors
+          reject(err);
         } else {
-          // Create a map of the submitOptions to maintain their order
           const optionsOrder = new Map();
           submitOptions.forEach((option, index) => {
             optionsOrder.set(option.toLowerCase(), index);
           });
 
-          // Sort the proxies based on the original submitOptions order
           const sortedProxies = proxies.sort((a, b) => {
             const indexA = optionsOrder.get(a.fields.Proxy.toLowerCase());
             const indexB = optionsOrder.get(b.fields.Proxy.toLowerCase());
             return indexA - indexB;
           });
 
-          resolve(sortedProxies); // Resolve with the sorted proxies
+          resolve(sortedProxies);
         }
       });
   });
 }
 
-// Add subdomain as submit option
+// Update options with subdomain
 function updateOptionsWithSubdomain(options = [], subdomain, guests = []) {
-  // Ensure options is always an array
   if (!Array.isArray(options)) {
-    options = [options]; // Convert to array if it's not
+    options = [options];
   }
   return [subdomain, ...options, ...guests];
 }
@@ -890,7 +763,7 @@ function updateOptionsWithSubdomain(options = [], subdomain, guests = []) {
 // Find context base
 async function findBase(siteId) {
   console.log("Finding base for siteId:", siteId);
-  const basesToCheck = ["Contexts", "Proxies"]; // List of bases to check
+  const basesToCheck = ["Contexts", "Proxies"];
   for (const baseName of basesToCheck) {
     console.log("Checking base:", baseName);
     const records = await base(baseName)
@@ -900,25 +773,24 @@ async function findBase(siteId) {
       .firstPage();
 
     if (records.length > 0) {
-      console.log("Site ID found in base:", baseName);
+      console.log(siteId,"not found in base:", baseName);
       return baseName;
     }
   }
-  return null; // Return null if siteId is not found in any base
+  return null;
 }
 
+// Clean data for public
 function cleanDataForPublic(data) {
-  // Remove sensitive properties from the data
   function deleteProperties(obj) {
     Object.keys(obj).forEach((property) => {
       if (
         property.toLowerCase().includes("message") ||
         property.toLowerCase().includes("description")
-        // property.toLowerCase().includes("prompt")
       ) {
-        delete obj[property]; // Delete the property if it matches the keywords
+        delete obj[property];
       } else if (typeof obj[property] === "object" && obj[property] !== null) {
-        deleteProperties(obj[property]); // Recursively delete in nested objects
+        deleteProperties(obj[property]);
       }
     });
   }
@@ -927,6 +799,7 @@ function cleanDataForPublic(data) {
   return data;
 }
 
+// Create Payload for OpenAI
 function createPayload(systemMsg, userMsg) {
   return {
     model: gptModel,
@@ -942,6 +815,7 @@ function createPayload(systemMsg, userMsg) {
   };
 }
 
+// Get Assistant Response from OpenAI
 async function getAssistantResponse(payload) {
   try {
     const response = await axios.post(API_ENDPOINT, payload, {
@@ -954,11 +828,11 @@ async function getAssistantResponse(payload) {
   }
 }
 
+// Check if Name Exists in Airtable
 function checkNameExists(name) {
   return new Promise((resolve, reject) => {
     base("Proxies")
       .select({
-        // Filter the records
         filterByFormula: `{Proxy} = '${name}'`,
       })
       .firstPage((err, records) => {
@@ -966,21 +840,20 @@ function checkNameExists(name) {
           reject(err);
           return;
         }
-        // If any records are returned, the name exists
         resolve(records.length > 0);
       });
   });
 }
 
+// Send Mail
 async function sendMail(emotions, proxyEmail, proxyName, domain) {
-  console.log(emotions.joyUrl)
   return new Promise((resolve, reject) => {
     try {
       console.log("Sending email...");
 
       const mailOptions = {
         from: `"Ego-Proxy" <${email}>`,
-        to: `${proxyEmail}`, // List of recipients
+        to: `${proxyEmail}`,
         subject: "Proxy Created: " + proxyName,
         html: `
           <p>Meet your proxy:</p>
@@ -992,13 +865,12 @@ async function sendMail(emotions, proxyEmail, proxyName, domain) {
           </p>
           <p><a href='https://${proxyName}.${domain}/meet'>Click here</a> to train your proxy to emulate you.
           </p>
-          </p>
         `,
         attachments: [
           {
             filename: "image.jpg",
             path: emotions.joyUrl,
-            cid: "image@cid", //same cid value as in the html img src
+            cid: "image@cid",
           },
         ],
       };
@@ -1019,70 +891,92 @@ async function sendMail(emotions, proxyEmail, proxyName, domain) {
   });
 }
 
-// Updated route handler function
-function handleSendMail(req, res) {
-  const emotions = req.body.emotions; // Assuming emotions are passed in the request body
-  const { proxyEmail, proxyName, domain } = req.body; // Add any other necessary fields
+// Generate Content using OpenAI
+async function generateContent(transcript, context, systemContent) {
+  const payload = {
+    model: gptModel,
+    messages: [
+      {
+        role: "system",
+        content: systemContent,
+      },
+      { role: "user", content: transcript },
+    ],
+    temperature: 1,
+    max_tokens: 500,
+    top_p: 1,
+    frequency_penalty: 0.5,
+    presence_penalty: 0,
+  };
 
-  sendMail(emotions, proxyEmail, proxyName, domain)
-    .then((message) => {
-      res.status(200).json({ message });
-    })
-    .catch((error) => {
-      res.status(500).json({ message: error.message });
+  try {
+    const response = await axios.post(API_ENDPOINT, payload, {
+      headers: HEADERS,
     });
+    const summary = response.data.choices[0].message.content.trim();
+    return summary;
+  } catch (error) {
+    console.error("Error while generating content:", error);
+    return "Failed to generate content.";
+  }
 }
 
+// Summarize Transcript
+async function summarizeTranscript(transcript, context, user, profile) {
+  revise = profile
+    ? ` Incorporate details from their previous profile:
+  "${profile}".`
+    : "";
+  if (context === "meet") {
+    console.log("profile:", profile);
+    let person = !profile ? "You" : user;
+    console.log("Person:", person);
+    systemContent = `Use the responses by '${person}' in this transcript to create a character portrait in 100 words. Include speech patterns. Do not take everything at face value. Look for clues about unspoken traits like a psycho-analyst. Write the summary in the tone of Alan Watts. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves. Only include the prompt, do not include a line labelling it as a prompt. Do not mention name. ${revise}`;
+  } else if (context === "interview") {
+    systemContent = `Use the responses in this transcript to generate a concise summary of ${user}'s professional experience. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves during an interview. Do not use Markdown.${revise}`;
+  } else if (context === "date") {
+    systemContent = `Use the responses in this transcript to generate a dating profile for ${user}. Do not use Markdown.${revise}`;
+  } else if (context === "debate") {
+    systemContent = `Use the responses in this transcript to create a profile of ${user}'s beliefs.  Do not use Markdown.${revise}`;
+  } else if (context === "adventure") {
+    systemContent = `Use the responses in this transcript to create a profile of ${user}'s adventure style.  Do not use Markdown.${revise}`;
+  }
+  console.log("systemContent:", systemContent);
+  return await generateContent(transcript, context, systemContent);
+}
+
+// Initiate Proxy Creation
 async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
   console.log("Creating proxy...");
-  let { proxyName, genderIdentity, proxyEmail } = req.body;
+  const { proxyName, genderIdentity, proxyEmail } = req.body;
 
-  // Other possible styles: low poly, Material Design, Polygonal
-  // let style = `flat, minimalistic, low poly depiction, abstract, poorly drawn`;
-  // The depiction should focus on basic shapes and flat colors. The goal is to create a simple, abstract representation of the subject.
+  const avatarDescription = `Appearance: ${photoDescription}
 
-  // Exclude any additional elements like color palettes or reference shades.
-  let avatarDescription = `Appearance:
-  ${photoDescription}
+Style Details: Capture the essence of this description using a Low-Poly children's cartoon style with geometric shapes and flat colors emphasizing a clear, recognizable likeness without detailed textures. Add a subtle psychedelic effect to the image to make it more visually interesting.
 
-  Style Details: Capture the essence of this description using a Low-Poly children's cartoon style with geometric shapes and flat colors emphasizing a clear, recognizable likeness without detailed textures. Add a subtle psychadelic effect to the image to make it more visually interesting.
+Important:
+- The eyes must be directed straight forward.
+- The background must be pure black.
+- The emotion of the image must be cartoonishly exaggerated and extreme.`;
 
-  Important:
-  - The eyes must be directed straight forward.
-  - The background must be pure black.
-  - The emotion of the image must be cartoonishly exaggerated and extreme.`;
-  console.log("Avatar Description:", avatarDescription);
+  const domain = req.get("host");
 
-  domain = req.get("host");
-
-  // Check if the name already exists in the database
   const nameExists = await checkNameExists(proxyName);
-
   if (nameExists) {
     throw new Error("Name is already in use");
   }
 
-  let emotions = {
+  const emotions = {
     angryUrl: "",
-    angryPrompt: "",
-    friendlyUrl: "", // Updated 'think' to 'friendly'
-    friendlyPrompt: "",
-    confusedUrl: "", // Updated 'listen' to 'confused'
-    confusedPrompt: "",
+    friendlyUrl: "",
+    confusedUrl: "",
     speakUrl: "",
-    speakPrompt: "",
-    joyUrl: "", // Updated 'joy' to 'joy'
-    joyPrompt: "",
-    sadUrl: "", // Updated 'smile' to 'sad'
-    sadPrompt: "",
-    sadnessUrl: "",
-    sadnessPrompt: "",
-    fearUrl: "",
-    fearPrompt: "",
+    joyUrl: "",
+    sadUrl: "",
     disgustUrl: "",
-    disgustPrompt: "",
-    embarassedUrl: "", // Added 'embarassed'
-    embarassedPrompt: "",
+    fearUrl: "",
+    embarrassedUrl: "",
+    intriguedUrl: "",
   };
 
   const calculateProgress = () => {
@@ -1090,18 +984,6 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     const filledEmotions = Object.values(emotions).filter(
       (url) => url !== ""
     ).length;
-    if (filledEmotions === 1) {
-      console.log("Image Prompt Generated");
-    }
-    if (filledEmotions > 1) {
-      console.log(
-        "Images Generated",
-        Math.floor(filledEmotions),
-        "of",
-        Math.floor(totalLength),
-        "filled."
-      );
-    }
     const percentageComplete = Math.floor(
       ((filledEmotions + 6) / (totalLength + 6)) * 100
     );
@@ -1109,115 +991,74 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
     return percentageComplete;
   };
 
-  const sendProgress = (ws) => {
-    const currentTime = new Date().toLocaleTimeString();
-    console.log("Current time:", currentTime);
+  const sendProgress = () => {
     const progress = calculateProgress();
     ws.send(JSON.stringify({ event: "progress", progress }));
     console.log("Progress sent:", progress);
   };
 
   try {
-    apiEndpoint = "https://api.openai.com/v1/images/generations";
-    sendProgress(ws);
-    console.log("Beginning emotion generation...");
+    const apiEndpoint = "https://api.openai.com/v1/images/generations";
+    sendProgress();
 
-    let emotionInstructions = `I am generating images to represent different emotions and facial expressions. Render a ${ethnicity} ${genderIdentity} staring straight ahead against a pure black background in an extreme state of`;
+    const emotionInstructions = `I am generating images to represent different emotions and facial expressions. Render a ${ethnicity} ${genderIdentity} staring straight ahead against a pure black background in an extreme state of`;
 
-    let speakDescription = `${emotionInstructions} TALKING! MOUTH MUST BE OPEN!`;
-
-    let friendlyDescription = `${emotionInstructions} FRIENDLINESS!`;
-
-    let confusedDescription = `${emotionInstructions} CONFUSION! SCRATCHING HEAD!`;
-
-    let joyDescription = `${emotionInstructions} JOY AND LAUGHTER!`;
-
-    let sadDescription = `${emotionInstructions} DESPAIR!`;
-
-    let disgustedDescription = `${emotionInstructions} DISGUST!`;
-
-    let angryDescription = `${emotionInstructions} ANGER!`;
-
-    let afraidDescription = `${emotionInstructions} FEAR!`;
-
-    let embarassedDescription = `${emotionInstructions} EMBARASSMENT! Must be blushing!`;
-
-    let intriguedDescription = `${emotionInstructions} INTRIGUE! HAND ON THEIR CHIN!`;
-
-    // Prompt Array for Each Emotion
-    let subsequentPrompts = [
-      `${speakDescription}
-      ${avatarDescription}`,
-      `${friendlyDescription}
-      ${avatarDescription}`,
-      `${confusedDescription}
-      ${avatarDescription}`,
-      `${joyDescription}
-      ${avatarDescription}`,
-      `${sadDescription}
-      ${avatarDescription}`,
-      `${disgustedDescription}
-      ${avatarDescription}`,
-      `${angryDescription}
-      ${avatarDescription}`,
-      `${afraidDescription}
-      ${avatarDescription}`,
-      `${embarassedDescription}
-      ${avatarDescription}`,
-      `${intriguedDescription}
-      ${avatarDescription}`,
+    const emotionDescriptions = [
+      `${emotionInstructions} TALKING! MOUTH MUST BE OPEN!`,
+      `${emotionInstructions} FRIENDLINESS!`,
+      `${emotionInstructions} CONFUSION! SCRATCHING HEAD!`,
+      `${emotionInstructions} JOY AND LAUGHTER!`,
+      `${emotionInstructions} DESPAIR!`,
+      `${emotionInstructions} DISGUST!`,
+      `${emotionInstructions} ANGER!`,
+      `${emotionInstructions} FEAR!`,
+      `${emotionInstructions} EMBARRASSMENT! Must be blushing!`,
+      `${emotionInstructions} INTRIGUE! HAND ON THEIR CHIN!`,
     ];
 
-    // Response Processing for Emotions
+    const prompts = emotionDescriptions.map(
+      (desc) => `${desc}\n${avatarDescription}`
+    );
+
     const processResponse = (response, index) => {
+      const url = response.data.data[0].url;
       switch (index) {
         case 0:
-          emotions.speakUrl = response.data.data[0].url;
-          emotions.speakPrompt = response.data.data[0].revised_prompt;
+          emotions.speakUrl = url;
           break;
         case 1:
-          emotions.friendlyUrl = response.data.data[0].url; // Updated to 'friendly'
-          emotions.friendlyPrompt = response.data.data[0].revised_prompt;
+          emotions.friendlyUrl = url;
           break;
         case 2:
-          emotions.confusedUrl = response.data.data[0].url; // Updated to 'confused'
-          emotions.confusedPrompt = response.data.data[0].revised_prompt;
+          emotions.confusedUrl = url;
           break;
         case 3:
-          emotions.joyUrl = response.data.data[0].url;
-          emotions.joyPrompt = response.data.data[0].revised_prompt;
+          emotions.joyUrl = url;
           break;
         case 4:
-          emotions.sadUrl = response.data.data[0].url; // Updated to 'sad'
-          emotions.sadPrompt = response.data.data[0].revised_prompt;
+          emotions.sadUrl = url;
           break;
         case 5:
-          emotions.disgustUrl = response.data.data[0].url;
-          emotions.disgustPrompt = response.data.data[0].revised_prompt;
+          emotions.disgustUrl = url;
           break;
         case 6:
-          emotions.angryUrl = response.data.data[0].url;
-          emotions.angryPrompt = response.data.data[0].revised_prompt;
+          emotions.angryUrl = url;
           break;
         case 7:
-          emotions.fearUrl = response.data.data[0].url;
-          emotions.fearPrompt = response.data.data[0].revised_prompt;
+          emotions.fearUrl = url;
           break;
         case 8:
-          emotions.embarassedUrl = response.data.data[0].url;
-          emotions.embarassedPrompt = response.data.data[0].revised_prompt;
+          emotions.embarrassedUrl = url;
           break;
         case 9:
-          emotions.intriguedUrl = response.data.data[0].url;
-          emotions.intriguedPrompt = response.data.data[0].revised_prompt;
+          emotions.intriguedUrl = url;
           break;
         default:
           console.warn(`No case for index ${index}`);
       }
     };
-    // console.log("subsequentPrompts:", subsequentPrompts); 
-    // Create an array of promises for the axios requests
-    const requests = subsequentPrompts.map((prompt, index) =>
+
+    const requests = prompts.map((prompt, index) =>
       axios
         .post(
           apiEndpoint,
@@ -1231,7 +1072,7 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
         )
         .then((response) => {
           processResponse(response, index);
-          sendProgress(ws); // Call sendProgress after processing the response
+          sendProgress();
         })
         .catch((err) => {
           console.error(
@@ -1241,7 +1082,6 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
         })
     );
 
-    // Wait for all requests to complete
     await Promise.allSettled(requests);
 
     base("Proxies")
@@ -1256,7 +1096,7 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
         disgust: [{ url: emotions.disgustUrl }],
         fear: [{ url: emotions.fearUrl }],
         angry: [{ url: emotions.angryUrl }],
-        embarassed: [{ url: emotions.embarassedUrl }],
+        embarrassed: [{ url: emotions.embarrassedUrl }],
         intrigued: [{ url: emotions.intriguedUrl }],
         imagePrefix: "img/Guest/",
         email: proxyEmail,
@@ -1266,8 +1106,8 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
         throw err;
       });
 
-      await sendMail(emotions, proxyEmail, proxyName, domain);
-    // Add images to Airtable
+    await sendMail(emotions, proxyEmail, proxyName, domain);
+
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ event: "complete", proxyName: proxyName }));
     }
@@ -1275,13 +1115,6 @@ async function initiateProxyCreation(req, ws, photoDescription, ethnicity) {
   } catch (err) {
     console.error("Error updating Airtable:", err);
     ws.send(JSON.stringify({ error: "Error updating Airtable" }));
-    throw new Error("Error updating Airtable"); // Rethrow or create a new error
+    throw new Error("Error updating Airtable");
   }
-
-  
-
-  
-
-  // Route to send mail
-  // app.post("/send-mail", handleSendMail);
 }

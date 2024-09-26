@@ -2,6 +2,7 @@ const WebSocketManager = {
   clientId: null,
   environment: null,
   socket: null,
+  
   init() {
     const host =
       window.location.hostname === "localhost"
@@ -21,7 +22,7 @@ const WebSocketManager = {
     this.socket = new WebSocket(host);
     this.bindEvents();
 
-    // Send a "ping" message every 5 seconds
+    // Send a "ping" message every 15 seconds
     this.socket.addEventListener("open", () => {
       this.pingInterval = setInterval(() => {
         if (this.socket.readyState === WebSocket.OPEN) {
@@ -88,6 +89,7 @@ const UI = {
     progressBar.setAttribute("aria-valuenow", progressPercentage);
     progressBar.textContent = `${progressPercentage}%`;
   },
+
   updateUIForSuccess(data) {
     console.log("All images have been added to Airtable");
     const successMessage = document.getElementById("successMessage");
@@ -99,6 +101,7 @@ const UI = {
     document.getElementById("progressBarContainer").style.display = "none";
     document.getElementById("errorMessage").style.display = "none";
   },
+
   updateUIForError(error) {
     console.log("An error occurred:", error);
     const errorMessage = document.getElementById("errorMessage");
@@ -110,6 +113,7 @@ const UI = {
     document.getElementById("progressBarContainer").style.display = "none";
     document.getElementById("successMessage").style.display = "none";
   },
+
   handleFormSuccess() {
     console.log("Processing started...");
     document.getElementById("progressBarContainer").style.display = "block";
@@ -120,7 +124,7 @@ const UI = {
   },
 };
 
-
+// Toggle Other Ethnicity Input
 function toggleOtherEthnicity(select) {
   var otherEthnicityContainer = document.getElementById(
     "otherEthnicityContainer"
@@ -132,6 +136,7 @@ function toggleOtherEthnicity(select) {
   }
 }
 
+// Submit Form Data
 async function submitFormData(formData) {
   console.log(formData)
   try {
@@ -152,11 +157,11 @@ async function submitFormData(formData) {
   }
 }
 
+// DOMContentLoaded Event
 document.addEventListener("DOMContentLoaded", () => {
   WebSocketManager.init();
 
-  let modalElement = document.getElementById("createProxyModal");
-
+  const modalElement = document.getElementById("createProxyModal");
   modalElement.addEventListener("show.bs.modal", function (event) {
     WebSocketManager.init();
   });
