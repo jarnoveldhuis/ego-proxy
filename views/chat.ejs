@@ -167,7 +167,7 @@
             <label class="input-group-text" for="contextSelect">Scenario:</label>
             <select class="form-select" id="contextSelect" onchange="updateContext(); updateUrl(this.value.toLowerCase())">
               <option value="Settings" disabled>Select...</option>
-              <option value="Meet" <% if (context.context === 'Meet') { %>selected<% } %>>Meeting</option>
+              <option value="Meet" <% if (context.context === 'Meet') { %>selected<% } %>>Small Talk</option>
               <option value="Interview" <% if (context.context === 'Interview') { %>selected<% } %>>Job Interview</option>
               <option value="Date" <% if (context.context === 'Date') { %>selected<% } %>>Blind Date</option>
               <option value="Debate" <% if (context.context === 'Debate') { %>selected<% } %>>Argument</option>

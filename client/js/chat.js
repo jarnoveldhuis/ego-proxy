@@ -490,8 +490,9 @@ async function askBot(event) {
 
   if (tutorial || training) {
     if (trainingProgress < 100) {
+      progressContext = context.context = "Meet" ? "Training" : context.context;
       trainingProgressElement.textContent =
-        `${context.context} Progress: ` + Math.floor(trainingProgress) + `%`;
+        `${progressContext} Progress: ` + Math.floor(trainingProgress) + `%`;
     } else {
       trainingProgressElement.textContent = `Complete!`;
     }
