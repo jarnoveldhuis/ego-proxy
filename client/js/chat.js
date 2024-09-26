@@ -40,6 +40,7 @@ let trainingUrl = "";
 let trainingProgress = 0;
 
 // Settings
+let contentName
 let role = "";
 let org = "";
 let contentId = "";
@@ -494,7 +495,7 @@ async function askBot(event) {
       trainingProgressElement.textContent =
         `${progressContext} Progress: ` + Math.floor(trainingProgress) + `%`;
     } else {
-      trainingProgressElement.textContent = `Complete!`;
+      trainingProgressElement.textContent = `Updating Profile...`;
     }
   }
   if (transcriptText.length > transcriptThreshold && hasPersonality === false) {
@@ -725,7 +726,7 @@ function updateContent() {
   document.getElementById("contentField").value = content;
   toggleTraining();
   document.getElementById("contentId").innerHTML = `<b>${contentName}:</b>`;
-
+  document.getElementById("successContext").innerHTML = `<h4 class="alert-heading">${contentName} Updated!</h4>`;
   document.getElementById(
     "practice-tab"
   ).innerHTML = `Practice ${selectElement.value}`;
