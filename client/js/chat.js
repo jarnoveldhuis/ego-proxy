@@ -703,6 +703,7 @@ function updateContent() {
     document.getElementById("practice").classList.remove("show");
     document.getElementById("share").classList.add("show");
     document.getElementById("testProxy").innerText = "Begin";
+    document.getElementById("testProxy").setAttribute("onclick", "redirectToUrl(shareUrl)");
     document.getElementById("yourName").innerText = "Your Name:";
     document.getElementById("settingsHeaderText").innerText =
       proxyName + " " + siteId;
@@ -795,6 +796,7 @@ function redirectToUrl(url) {
     }
   }
 }
+
 function redirectToTraining(url) {
   const formFields = document.querySelectorAll(".params");
   let allFieldsFilled = true;
