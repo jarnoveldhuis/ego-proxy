@@ -122,7 +122,7 @@
 
             <!-- Submit To Section -->
             <div class="d-flex submit-prompt align-items-center">
-              <span id= "submitLabel" class="me-2">Submit to:</span>
+              <span id="submitLabel" class="me-2">Submit to:</span>
               <span id="newButtonPlaceholder"></span>
               <div class="btn-group" id="submitTo" role="group">
                 <% if (context.submitToOptions && context.context !=='Custom' ) { %>
@@ -138,50 +138,36 @@
     </div>
   </div>
 
-  <!-- Success Alert -->
-  <% if (context.alias !== "CT" ) { %>
-  <div id="contextUpdated" class="alert alert-success alert-dismissible fade" role="alert">
-    <div id="successContext"><h4 class="alert-heading">Personality Updated!</h4></div>
-    
-    <hr> Use this menu to:
-    <p class="mb-0">
-    <ul>
-      <li>Review and refine <%= proxyName %>'s personality.</li>
-      <li>Create custom shareable links.</li>
-      <li>Train <%= proxyName %> to interact on your behalf in other contexts.</li>
-    </ul>
-    Click the cog icon to access this menu whenever you need it.</p>
-    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-  </div>
+
 
   <!-- Settings Modal -->
   <div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="hide" data-bs-backdrop="static" aria-hidden="true">
     <div class="modal-dialog">
       <div class="modal-content">
         <div id="hideForShare">
-        <!-- Modal Header -->
-        <div id="settingsHeader" class="modal-header d-flex justify-content-between align-items-center">
-          <h5 id="settingsHeaderText" class="modal-title mb-0">Settings</h5>
+          <!-- Modal Header -->
+          <div id="settingsHeader" class="modal-header d-flex justify-content-between align-items-center">
+            <h5 id="settingsHeaderText" class="modal-title mb-0">Settings</h5>
 
-          <!-- Scenario Selector -->
-          <div id="scenarioSelector" class="input-group ms-2 mt-2 mt-md-0 scenario-selector " style="width: auto;">
-            <label class="input-group-text" for="contextSelect">Scenario:</label>
-            <select class="form-select" id="contextSelect" onchange="updateContext(); updateUrl(this.value.toLowerCase())">
-              <option value="Settings" disabled>Select...</option>
-              <option value="Meet" <% if (context.context === 'Meet') { %>selected<% } %>>Small Talk</option>
-              <option value="Interview" <% if (context.context === 'Interview') { %>selected<% } %>>Job Interview</option>
-              <option value="Date" <% if (context.context === 'Date') { %>selected<% } %>>Blind Date</option>
-              <option value="Debate" <% if (context.context === 'Debate') { %>selected<% } %>>Argument</option>
-              <option value="Adventure" <% if (context.context === 'Adventure') { %>selected<% } %>>Adventure</option>
-            </select>
+            <!-- Scenario Selector -->
+            <div id="scenarioSelector" class="input-group ms-2 mt-2 mt-md-0 scenario-selector " style="width: auto;">
+              <label class="input-group-text" for="contextSelect">Scenario:</label>
+              <select class="form-select" id="contextSelect" onchange="updateContext(); updateUrl(this.value.toLowerCase())">
+                <option value="Settings" disabled>Select...</option>
+                <option value="Meet" <% if (context.context === 'Meet') { %>selected<% } %>>Small Talk</option>
+                <option value="Interview" <% if (context.context === 'Interview') { %>selected<% } %>>Job Interview</option>
+                <option value="Date" <% if (context.context === 'Date') { %>selected<% } %>>Blind Date</option>
+                <option value="Debate" <% if (context.context === 'Debate') { %>selected<% } %>>Argument</option>
+                <option value="Adventure" <% if (context.context === 'Adventure') { %>selected<% } %>>Adventure</option>
+              </select>
+            </div>
           </div>
         </div>
-</div>
         <div class="input-group input-group mb-3" style="display: none;">
           <span class="input-group-text" id="basic-addon2">Proxy:</span>
           <select class="form-select form-select" id="proxySelect" onchange="updateUrl(document.getElementById('contextSelect').value.toLowerCase())">
             <option selected><%= proxyName %></option>
-            
+
             <optgroup label="Your Other Proxies">
               <% if (yourProxies.length > 0) { %>
               <% yourProxies.forEach(function(option) { %>
@@ -230,7 +216,7 @@
 
             <!-- Practice/Share Navigation -->
             <div id="allContent" style="display: block">
-              
+
               <ul class="nav nav-tabs" id="myTab" role="tablist">
                 <li class="nav-item" role="presentation">
                   <button class="nav-link active" id="practice-tab" data-bs-toggle="tab" data-bs-target="#practice" type="button" role="tab" aria-controls="practice" aria-selected="true">Practice</button>
@@ -242,7 +228,7 @@
               <div>
                 <small id="tabDescription" class="form-text text-muted"></small>
               </div>
-              
+
               <div id="parameters">
                 <div id="interviewModal" style="display: none;">
                   <div class="form-group row">
@@ -288,12 +274,12 @@
               <div class="tab-content" id="myTabContent">
                 <div class="tab-pane fade show active" id="practice" role="tabpanel" aria-labelledby="practice-tab">
                   <div id="standardModal">
-                    
+
 
                     <div class="form-group row">
                       <div class="input-group input-group-sm mb-3" id="name">
 
-                        
+
                         <div class="input-group input-group-sm mb-3" id="nameInputContainer">
                           <div class="input-group-prepend">
                             <span class="input-group-text" id="proxyName">Meet</span>
@@ -344,7 +330,7 @@
                               </li>
 
                               <% } %>
-                              
+
 
                               <li>
                                 <a class="dropdown-item" id="createProxyLink" href="#" target="_blank"><b>Create New Proxy</a></b></a>
@@ -357,7 +343,7 @@
                         </div>
                       </div>
                     </div>
-                    
+
                   </div>
                 </div>
 
@@ -386,11 +372,27 @@
                     <button type="button" class="btn btn-dark" id="testProxy" disabled onclick="testUrl(shareUrl, '_blank')">Try It</button>
                   </div>
                 </div>
-                
+
               </div>
             </div>
         </div>
       </div>
+        <!-- Success Alert -->
+  <% if (context.alias !== "CT" ) { %>
+
+    <!-- <div id="contextUpdated" class="alert alert-success alert-dismissible fade" role="alert">
+      <div id="successContext"><h4 class="alert-heading">Personality Updated!</h4></div>
+      
+      <hr> Use this menu to:
+      <p class="mb-0">
+      <ul>
+        <li>Review and refine <%= proxyName %>'s personality.</li>
+        <li>Create custom shareable links.</li>
+        <li>Train <%= proxyName %> to interact on your behalf in other contexts.</li>
+      </ul>
+      Click the cog icon to access this menu whenever you need it.</p>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div> -->
 
       <div class='links'>
       </div>

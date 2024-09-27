@@ -40,7 +40,7 @@ let trainingUrl = "";
 let trainingProgress = 0;
 
 // Settings
-let contentName
+let contentName;
 let role = "";
 let org = "";
 let contentId = "";
@@ -112,13 +112,12 @@ function updateAvatar(submit, reaction) {
     const submitButtons = document.querySelectorAll('input[type="submit"]');
     const submitAs = document.getElementById("submitAs").value;
     const inputField = document.getElementById("userInput");
-    
+
     if (submitAs in proxies || !inputField.value.trim()) {
       submitButtons.forEach((button) => {
         button.disabled = button.value === avatar;
       });
     }
-
 
     return submitButtons;
   }
@@ -541,9 +540,9 @@ async function askBot(event) {
       settingsModal.show();
       document.getElementById("contentField").value = data.transcriptSummary;
       document.getElementById("toggleButton").style.display = "inline-block";
-      setTimeout(() => {
-        showAlert(document.getElementById("contextUpdated"));
-      }, 1000);
+      // setTimeout(() => {
+      //   showAlert(document.getElementById("contextUpdated"));
+      // }, 1000);
 
       proxies[Object.keys(proxies)[0]].meet = data.transcriptSummary;
       toggleTraining();
@@ -628,6 +627,12 @@ function showAlert(alertElement) {
   alertElement.classList.add("show"); // Show the alert
 }
 
+// Function to show the alert and adjust z-index
+function showAlert(alertElement) {
+  alertElement.style.zIndex = 1070; // Set z-index higher than modals
+  alertElement.classList.add("show"); // Show the alert
+}
+
 function getHosts(currentSpeaker) {
   // Add checked names as a single "guest" parameter
   const checkboxes = document.querySelectorAll(
@@ -703,7 +708,9 @@ function updateContent() {
     document.getElementById("practice").classList.remove("show");
     document.getElementById("share").classList.add("show");
     document.getElementById("testProxy").innerText = "Begin";
-    document.getElementById("testProxy").setAttribute("onclick", "redirectToUrl(shareUrl)");
+    document
+      .getElementById("testProxy")
+      .setAttribute("onclick", "redirectToUrl(shareUrl)");
     document.getElementById("yourName").innerText = "Your Name:";
     document.getElementById("settingsHeaderText").innerText =
       proxyName + " " + siteId;
@@ -727,7 +734,9 @@ function updateContent() {
   document.getElementById("contentField").value = content;
   toggleTraining();
   document.getElementById("contentId").innerHTML = `<b>${contentName}:</b>`;
-  document.getElementById("successContext").innerHTML = `<h4 class="alert-heading">${contentName} Updated!</h4>`;
+  // document.getElementById(
+  //   "successContext"
+  // ).innerHTML = `<h4 class="alert-heading">${contentName} Updated!</h4>`;
   document.getElementById(
     "practice-tab"
   ).innerHTML = `Practice ${selectElement.value}`;
@@ -1100,19 +1109,18 @@ function beginTraining(transcriptText) {
   nameOption.textContent = proxyName;
 
   submitAs.appendChild(nameOption);
-  
 
   function removeButtonByValue(buttonGroupId, buttonValue) {
     const buttonGroup = document.getElementById(buttonGroupId);
     const buttons = buttonGroup.querySelectorAll('input[type="submit"]');
-  
-    buttons.forEach(button => {
+
+    buttons.forEach((button) => {
       if (button.value === buttonValue) {
         buttonGroup.removeChild(button);
       }
     });
   }
-  
+
   // Example usage
   removeButtonByValue("submitTo", proxyName);
 
@@ -1192,7 +1200,7 @@ function selectProxyBasedOnContext(context) {
   if (context === "Date") {
     let proxyInput = document.getElementById("proxyInput");
     proxyInput.value = "Select a date...";
-    
+
     updateMeetProxyButtonState();
     return; // All checkboxes are already deselected
   }
@@ -1216,7 +1224,9 @@ function updateMeetProxyButtonState() {
   const allCheckboxes = document.querySelectorAll("input.form-check-input");
   const meetProxyButton = document.getElementById("meetProxy");
 
-  const anyChecked = Array.from(allCheckboxes).some(checkbox => checkbox.checked);
+  const anyChecked = Array.from(allCheckboxes).some(
+    (checkbox) => checkbox.checked
+  );
 
   if (meetProxyButton) {
     meetProxyButton.disabled = !anyChecked;
@@ -1555,11 +1565,11 @@ async function initialize() {
           tabDescription.innerText = "";
       }
     }
-
-    const initialActiveTab = myTab.querySelector(".nav-link.active");
-    if (initialActiveTab) {
-      updateTabDescription(initialActiveTab.id);
-    }
+    // hideAlert(document.getElementById("contextUpdated"));
+    // const initialActiveTab = myTab.querySelector(".nav-link.active");
+    // if (initialActiveTab) {
+    //   updateTabDescription(initialActiveTab.id);
+    // }
 
     myTab.addEventListener("shown.bs.tab", function (event) {
       const activatedTab = event.target; // Newly activated tab
@@ -1591,11 +1601,11 @@ async function initialize() {
       alertElement.style.zIndex = "";
     }
 
-    document
-      .querySelector("#contextUpdated .btn-close")
-      .addEventListener("click", function () {
-        hideAlert(document.getElementById("contextUpdated"));
-      });
+    // document
+    //   .querySelector("#contextUpdated .btn-close")
+    //   .addEventListener("click", function () {
+    //     hideAlert(document.getElementById("contextUpdated"));
+    //   });
 
     const inputElement = document.getElementById("userInput");
     const imageElement = document.getElementById("botImage");
@@ -1699,10 +1709,12 @@ async function initialize() {
         document.getElementById("topicInput").value = topic;
       }
 
-      document.querySelectorAll("input.form-check-input").forEach((checkbox) => {
-        checkbox.addEventListener("change", updateMeetProxyButtonState);
-      });
-    
+      document
+        .querySelectorAll("input.form-check-input")
+        .forEach((checkbox) => {
+          checkbox.addEventListener("change", updateMeetProxyButtonState);
+        });
+
       updateMeetProxyButtonState();
       updateContext();
 
