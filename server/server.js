@@ -847,6 +847,10 @@ function checkNameExists(name) {
 
 // Send Mail
 async function sendMail(emotions, proxyEmail, proxyName, domain) {
+  if (!proxyEmail) {
+    console.error("Proxy email is missing");
+    return Promise.reject(new Error("Proxy email is missing"));
+  }
   return new Promise((resolve, reject) => {
     try {
       console.log("Sending email...");
@@ -920,6 +924,8 @@ async function generateContent(transcript, context, systemContent) {
     return "Failed to generate content.";
   }
 }
+
+
 
 // Summarize Transcript
 async function summarizeTranscript(transcript, context, user, profile) {
@@ -1105,9 +1111,9 @@ Important:
         console.error("Error with base create:", err);
         throw err;
       });
-
+    if (proxyEmail) {
     await sendMail(emotions, proxyEmail, proxyName, domain);
-
+    }
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ event: "complete", proxyName: proxyName }));
     }

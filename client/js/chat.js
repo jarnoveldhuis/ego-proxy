@@ -680,6 +680,43 @@ function updateContext() {
 
 let originalContent;
 
+async function updateProxy(event) {
+  event.preventDefault(); // Prevent default form submission
+
+  // Get form values
+  const contentId = document.getElementById('contentIdField').value;
+  const content = document.getElementById('contentField').value;
+
+  // Disable save button to prevent multiple clicks
+  const saveButton = document.getElementById('save');
+  saveButton.disabled = true;
+
+  try {
+    const response = await fetch('/update-proxy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ contentId, content }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      // Optionally, you can update the UI with the new profile data here
+    } else {
+      alert(data.error || 'Update failed. Please try again.');
+    }
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    alert('An error occurred while updating the profile.');
+  } finally {
+    // Re-enable the save button
+    saveButton.disabled = false;
+  }
+}
+
+
 function updateContent() {
   const selectElement = document.getElementById("contextSelect");
   const contentId = selectElement.value.toLowerCase();
@@ -692,20 +729,23 @@ function updateContent() {
 
   let params = new URLSearchParams(window.location.href);
   if (params.has("share")) {
-    document.getElementById("settingsProfile").style.display = "none";
+    
+    document.getElementById("profileLabel").style.display = "none";
+    document.getElementById("editForm").style.display = "none";
     document.getElementById("tabDescription").style.display = "none";
     document.getElementById("toggleButton").style.display = "none";
     document.getElementById("addProxyDropdown").style.display = "none";
-
     document.getElementById("scenarioSelector").style.display = "none";
     document.getElementById("myTab").style.display = "none";
     document.getElementById("urlCopy").style.display = "none";
+    document.getElementById("urlInput").style.display = "none";
     document.getElementById("parameters").style.display = "block";
     document.getElementById("practice-tab").classList.remove("active");
-    document.getElementById("share-tab").classList.add("active");
-    document.getElementById("practice").classList.remove("active");
-    document.getElementById("share").classList.add("active");
     document.getElementById("practice").classList.remove("show");
+    document.getElementById("practice").classList.remove("active");
+    document.getElementById("share-tab").classList.add("active");
+    document.getElementById("share").classList.add("active");
+    
     document.getElementById("share").classList.add("show");
     document.getElementById("testProxy").innerText = "Begin";
     document
@@ -713,7 +753,7 @@ function updateContent() {
       .setAttribute("onclick", "redirectToUrl(shareUrl)");
     document.getElementById("yourName").innerText = "Your Name:";
     document.getElementById("settingsHeaderText").innerText =
-      proxyName + " " + siteId;
+      context.context + " " + proxyName;
   } else {
     document.getElementById("yourName").innerText = yourName + ":";
   }
@@ -734,9 +774,7 @@ function updateContent() {
   document.getElementById("contentField").value = content;
   toggleTraining();
   document.getElementById("contentId").innerHTML = `<b>${contentName}:</b>`;
-  // document.getElementById(
-  //   "successContext"
-  // ).innerHTML = `<h4 class="alert-heading">${contentName} Updated!</h4>`;
+
   document.getElementById(
     "practice-tab"
   ).innerHTML = `Practice ${selectElement.value}`;
@@ -771,6 +809,7 @@ function checkParams(url) {
 function testUrl(url) {
   window.open(url, "_blank");
 }
+
 
 function redirectToUrl(url) {
   let newUrl = new URL(url);
@@ -920,6 +959,7 @@ function train() {
       break;
   }
 }
+
 
 function toggleTraining() {
   console.log("Toggling training button");
@@ -1600,6 +1640,8 @@ async function initialize() {
       alertElement.classList.remove("show");
       alertElement.style.zIndex = "";
     }
+
+
 
     // document
     //   .querySelector("#contextUpdated .btn-close")

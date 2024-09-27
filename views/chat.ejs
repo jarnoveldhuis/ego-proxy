@@ -175,16 +175,17 @@
               <% }); %>
               <% } else { %>
               <% } %>
-              <option class="dropdown-item" id="createProxyLinkAs" value="createNewProxy"><b>Create New Proxy</a></b></a>
+              <option class="dropdown-item" id="createProxyLinkAs" value="createNewProxy"><b>Create New Proxy</b>
               </option>
             </optgroup>
           </select>
         </div>
 
         <div class="modal-body">
-          <form id="settingsProfile">
-
+          <div id="settingsProfile">
+            
             <!-- Profile -->
+             <div id = "profileLabel" >
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
                 <label for="contentField" id="contentId">Profile</label>
@@ -194,13 +195,14 @@
 
               <div class="d-flex">
 
-                <button class="btn btn-outline-dark btn-sm ml-2" id="save" disabled onclick="updateProxy(event)">
+                <button class="btn btn-outline-dark btn-sm ml-2" id="save" onclick="updateProxy(event)" disabled>
                   <i class="fas menuIcon fa-save"></i>
                 </button>
               </div>
             </div>
-
+          </div>
             <form id="editForm" action="/update-proxy" method="post">
+
               <input type="hidden" id="contentIdField" name="contentId" value="">
 
               <!-- Profile Section -->
@@ -286,7 +288,7 @@
                           </div>
                           <input type="text" id="proxyInput" class="form-control col-md-8" readonly>
                           <div class="dropdown">
-                            <button class="btn btn-outline-dark dropdown-toggle dropdown-toggle-split" type="button" id="addProxySelect" data-bs-toggle="dropdown" aria-expanded="false">
+                            <!-- <button class="btn btn-outline-dark dropdown-toggle dropdown-toggle-split" type="button" id="addProxySelect" data-bs-toggle="dropdown" aria-expanded="false"> -->
                               <span class="sr-only">Toggle Dropdown</span>
                             </button>
                             <ul class="dropdown-menu" id="addProxyDropdown" aria-labelledby="addProxySelect">
@@ -366,42 +368,25 @@
                     <div class="input-group-prepend">
                       <span class="input-group-text" id='yourName'>Meet</span>
                     </div>
-                    <input type="text" id="nameInput" class=" form-control col-md-auto" placeholder="Enter name" fponkeypress="return alpha(event)" oninput="updateUrl(context.context.toLowerCase())" pattern="[A-Za-z\s]+" title="Only letters and spaces are allowed">
-                    <input type="text" id="urlInput" class="form-control col-md-8" readonly style="display: none;">
-                    <button type="button" id="urlCopy" onclick="copyUrl()" class="btn btn-outline-dark" data-bs-toggle="tooltip" data-bs-placement="top" title="Copied!">Share</button>
+                    <input type="text" id="nameInput" class=" form-control col-md-auto" placeholder="Enter name" onkeypress="return alpha(event)" oninput="updateUrl(context.context.toLowerCase())" pattern="[A-Za-z\s]+" title="Only letters and spaces are allowed">
+                    
+                    <button type="button" id="urlCopy" onclick="copyUrl()" class="btn btn-outline-dark" data-bs-toggle="tooltip" data-bs-placement="top" title="Copied!">Copy URL</button>
                     <button type="button" class="btn btn-dark" id="testProxy" disabled onclick="testUrl(shareUrl, '_blank')">Try It</button>
                   </div>
+                  <input type="text" id="urlInput" class="form-control col-md-8" readonly>
                 </div>
 
               </div>
             </div>
+          </div>
         </div>
-      </div>
         <!-- Success Alert -->
-  <% if (context.alias !== "CT" ) { %>
+        <% if (context.alias !== "CT" ) { %>
 
-    <!-- <div id="contextUpdated" class="alert alert-success alert-dismissible fade" role="alert">
-      <div id="successContext"><h4 class="alert-heading">Personality Updated!</h4></div>
-      
-      <hr> Use this menu to:
-      <p class="mb-0">
-      <ul>
-        <li>Review and refine <%= proxyName %>'s personality.</li>
-        <li>Create custom shareable links.</li>
-        <li>Train <%= proxyName %> to interact on your behalf in other contexts.</li>
-      </ul>
-      Click the cog icon to access this menu whenever you need it.</p>
-      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    </div> -->
 
-      <div class='links'>
+
       </div>
-      </form>
-
     </div>
-
-  </div>
-  </div>
   </div>
   <% } %>
   </div>
