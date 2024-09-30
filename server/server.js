@@ -465,7 +465,7 @@ server.listen(port, () => {
 if (process.env.NODE_ENV === "development") {
   gptModel = "gpt-4o";
 } else {
-  gptModel = "gpt-4";
+  gptModel = "gpt-4o";
 }
 console.log("Model:", gptModel);
 
