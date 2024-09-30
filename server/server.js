@@ -463,9 +463,9 @@ server.listen(port, () => {
 
 // Set GPT Model based on environment
 if (process.env.NODE_ENV === "development") {
-  gptModel = "gpt-4o";
+  gptModel = "gpt-4o-2024-08-06";
 } else {
-  gptModel = "gpt-4o";
+  gptModel = "gpt-4o-2024-08-06";
 }
 console.log("Model:", gptModel);
 
