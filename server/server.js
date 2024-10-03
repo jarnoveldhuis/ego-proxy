@@ -81,6 +81,7 @@ const ELEVENLABS_ENDPOINTS = {
   Mike: "https://api.elevenlabs.io/v1/text-to-speech/EL0wUO72Pc3LfZ2jqe9b",
   Piero: "https://api.elevenlabs.io/v1/text-to-speech/lgy8xTZLCdWp5GxhftID",
   Jarno: "https://api.elevenlabs.io/v1/text-to-speech/6xnAUTtxFAYoyHtOWgDN",
+  YarnMan: "https://api.elevenlabs.io/v1/text-to-speech/6xnAUTtxFAYoyHtOWgDN",
   Ivan: "https://api.elevenlabs.io/v1/text-to-speech/e3oQ7D1OPPzhbJU50Qxp",
   Male: "https://api.elevenlabs.io/v1/text-to-speech/y1adqrqs4jNaANXsIZnD",
   Female: "https://api.elevenlabs.io/v1/text-to-speech/9iZbnYLpicE89JhjTrR5",
