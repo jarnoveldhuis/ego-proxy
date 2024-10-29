@@ -288,7 +288,7 @@
                           </div>
                           <input type="text" id="proxyInput" class="form-control col-md-8" readonly>
                           <div class="dropdown">
-                            <!-- <button class="btn btn-outline-dark dropdown-toggle dropdown-toggle-split" type="button" id="addProxySelect" data-bs-toggle="dropdown" aria-expanded="false"> -->
+                            <button class="btn btn-outline-dark dropdown-toggle dropdown-toggle-split" type="button" id="addProxySelect" data-bs-toggle="dropdown" aria-expanded="false">
                               <span class="sr-only">Toggle Dropdown</span>
                             </button>
                             <ul class="dropdown-menu" id="addProxyDropdown" aria-labelledby="addProxySelect">
@@ -339,7 +339,7 @@
                               </li>
                             </ul>
                           </div>
-                          <button type="button" class="btn btn-sm btn-dark" id="meetProxy" onclick="redirectToUrl(trainingUrl)">
+                          <button type="button" class="btn btn-sm btn-dark" id="meetProxy" onclick="redirectToUrl(regularUrl)">
                             Begin
                           </button>
                         </div>
@@ -475,6 +475,7 @@
   console.log("submitAs", context.submitAsOptions)
   const proxies = <%- JSON.stringify(proxies) %>;
   const publicProxies = <%- JSON.stringify(publicProxies) %>;
+  console.log("publicProxies", publicProxies)
   const yourProxies = <%- JSON.stringify(yourProxies) %>;
   const proxyName = Object.keys(proxies)[0];
   const transcriptThreshold = <%- JSON.stringify(transcriptThreshold) %>;

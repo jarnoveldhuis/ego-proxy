@@ -142,9 +142,9 @@ app.get("/:siteId", async (req, res) => {
   const subdomain =
     parts.length > 1 && parts[0] !== "ego-proxy" ? parts[0] : "";
 
-    if (CT === siteId) {
-      gptModel = "gpt-4";
-    }
+  if (CT === siteId) {
+    gptModel = "gpt-4";
+  }
 
   console.log(`GPT Model: ${gptModel}`);
 
@@ -181,7 +181,7 @@ app.post("/update-proxy", async (req, res) => {
   const parts = req.hostname.split(".");
   const subdomain = parts.length > 1 ? parts[0] : "";
   const { contentId, content } = req.body;
-  
+
   try {
     const proxyData = await findProxyDataByName(subdomain);
     if (proxyData) {
@@ -206,7 +206,16 @@ app.post("/update-proxy", async (req, res) => {
 
 // Chat Route
 app.post("/ask/", async (req, res) => {
-  const { question, submitAs, submitTo, transcript, siteId, guests, training, tutorial } = req.body;
+  const {
+    question,
+    submitAs,
+    submitTo,
+    transcript,
+    siteId,
+    guests,
+    training,
+    tutorial,
+  } = req.body;
 
   if (!question || !submitTo || !transcript || !siteId) {
     return res.status(400).send({ error: "Missing required fields" });
@@ -217,8 +226,7 @@ app.post("/ask/", async (req, res) => {
     return res.status(400).send({ error: "Data not found for siteId" });
   }
 
-  const emotions =
-    "Angry, Confused, Laugh, Sad, Fear, Disgust, embarrassed";
+  const emotions = "Angry, Confused, Laugh, Sad, Fear, Disgust, Embarrassed";
   const userMessage = `Add a single line of dialogue to this script to advance the plot. Never add more than one line of dialogue. Each line should express one of the following emotions: ${emotions}.\nBegin your response with "${submitTo}:" and include the relevant emotions in parentheses at the very end of your response. For example:\n${submitTo}: I'm feeling great today! (Joy)\nDo not use any other expressions than the ones listed and do not use any of these emotions twice in a row. Never change the casing of the name. `;
 
   const proxies = dataForSiteId.proxies;
@@ -245,7 +253,12 @@ app.post("/ask/", async (req, res) => {
   if (transcript.length > transcriptThreshold && (training || tutorial)) {
     try {
       console.log("Transcript summary conditions met. Summarizing...");
-      const transcriptSummary = await summarizeTranscript(transcript, siteId, subdomain, profile);
+      const transcriptSummary = await summarizeTranscript(
+        transcript,
+        siteId,
+        subdomain,
+        profile
+      );
       console.log("Transcript summarized successfully: ", transcriptSummary);
 
       let proxyData = await findProxyDataByName(subdomain);
@@ -296,19 +309,20 @@ app.post("/ask/", async (req, res) => {
     const progress = Math.floor(
       (transcript.length / transcriptThreshold) * 100
     );
-    let storyProgress = `The story is now ${progress}% complete. Use the transcript thus far and Joseph Campbells' Hero's journey framework to inform what happens next.\n`;
+    let storyProgress = `\nThe story is now ${progress}% complete. Use the transcript thus far and Joseph Campbells' Hero's journey framework to inform what happens next.\n`;
 
     const previousProxy = proxies[submitAs] || "";
     const previousProxyProfile = previousProxy[siteId]
       ? " Here is the profile of the person you're speaking to: \n" +
         previousProxy[siteId]
       : "";
-    let characters = proxyList.filter(proxy => proxy.toLowerCase() !== "you");
-    const systemMessage = `${proxyMessage}\n${contextMessage}\nCharacters: ${characters.join(", ")}\n`;
-
+    let characters = proxyList.filter((proxy) => proxy.toLowerCase() !== "you");
+    let systemMessage = `You are a screenwriter writing the next line of dialogue for one of the following characters: ${characters.join(
+      ", "
+    )}. Here is a summary of each each character's personality: ${Object.keys(proxies).map((proxy) => `${proxy}: ${proxies[proxy].meet}`).join("\n")}\n ${contextMessage}`;
     const payload = createPayload(
-      systemMessage + previousProxyProfile,
-      storyProgress + userMessage + transcript
+      systemMessage,
+      transcript + storyProgress + userMessage 
     );
     console.log("Response Payload:", payload);
     const assistantMessage = await getAssistantResponse(payload);
@@ -774,7 +788,7 @@ async function findBase(siteId) {
       .firstPage();
 
     if (records.length > 0) {
-      console.log(siteId,"not found in base:", baseName);
+      console.log(siteId, "not found in base:", baseName);
       return baseName;
     }
   }
@@ -925,8 +939,6 @@ async function generateContent(transcript, context, systemContent) {
     return "Failed to generate content.";
   }
 }
-
-
 
 // Summarize Transcript
 async function summarizeTranscript(transcript, context, user, profile) {
@@ -1113,7 +1125,7 @@ Important:
         throw err;
       });
     if (proxyEmail) {
-    await sendMail(emotions, proxyEmail, proxyName, domain);
+      await sendMail(emotions, proxyEmail, proxyName, domain);
     }
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ event: "complete", proxyName: proxyName }));
