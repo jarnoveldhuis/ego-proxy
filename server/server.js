@@ -316,13 +316,19 @@ app.post("/ask/", async (req, res) => {
       ? " Here is the profile of the person you're speaking to: \n" +
         previousProxy[siteId]
       : "";
+
     let characters = proxyList.filter((proxy) => proxy.toLowerCase() !== "you");
+    
     let systemMessage = `You are a screenwriter writing the next line of dialogue for one of the following characters: ${characters.join(
       ", "
-    )}. Here is a summary of each each character's personality: ${Object.keys(proxies).map((proxy) => `${proxy}: ${proxies[proxy].meet}`).join("\n")}\n ${contextMessage}`;
+    )}. Here is a summary of each each character's personality: ${Object.keys(
+      proxies
+    )
+      .map((proxy) => `${proxy}: ${proxies[proxy].message}`)
+      .join("\n")}\n ${contextMessage}`;
     const payload = createPayload(
       systemMessage,
-      transcript + storyProgress + userMessage 
+      transcript + storyProgress + userMessage
     );
     console.log("Response Payload:", payload);
     const assistantMessage = await getAssistantResponse(payload);
@@ -478,9 +484,9 @@ server.listen(port, () => {
 
 // Set GPT Model based on environment
 if (process.env.NODE_ENV === "development") {
-  gptModel = "gpt-4o-2024-08-06";
+  gptModel = "gpt-4o";
 } else {
-  gptModel = "gpt-4o-2024-08-06";
+  gptModel = "gpt-4o";
 }
 console.log("Model:", gptModel);
 
@@ -499,7 +505,7 @@ function updateContextMessages(
     globalDataStore[
       siteId
     ].context.message = `Say hello and introduce yourself by your name. Share a detailed overview of yourself. Ask questions to keep a conversation flowing.`;
-  }
+  } 
 
   // Update the context message for the interview site
   if (siteId == "interview" && lowerCaseProxies[subdomain].meet !== undefined) {
@@ -836,6 +842,7 @@ async function getAssistantResponse(payload) {
     const response = await axios.post(API_ENDPOINT, payload, {
       headers: HEADERS,
     });
+    console.log("Data:", response.data);
     return response.data.choices[0].message.content.trim();
   } catch (error) {
     console.error("Error while getting assistant response:", error);
@@ -894,6 +901,8 @@ async function sendMail(emotions, proxyEmail, proxyName, domain) {
         ],
       };
 
+      console.log("Mail options:", mailOptions);
+
       transporter.sendMail(mailOptions, function (error, info) {
         if (error) {
           console.error("Error sending email:", error);
@@ -950,7 +959,36 @@ async function summarizeTranscript(transcript, context, user, profile) {
     console.log("profile:", profile);
     let person = !profile ? "You" : user;
     console.log("Person:", person);
-    systemContent = `Use the responses by '${person}' in this transcript to create a character portrait in 100 words. Include speech patterns. Do not take everything at face value. Look for clues about unspoken traits like a psycho-analyst. Write the summary in the tone of Alan Watts. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves. Only include the prompt, do not include a line labelling it as a prompt. Do not mention name. ${revise}`;
+    systemContent = `Use the responses by '${person}' in this transcript to conduct a profound psychological analysis of the communication transcript. Distill the essence of the individual's personality into a 100-word character portrait that reveals:
+Psychological Dimensions:
+
+Core communication archetypes
+Emotional landscape and defense mechanisms
+Implicit belief systems
+Linguistic fingerprints and rhetorical strategies
+
+Analytical Framework:
+
+Decode subtext beyond literal language
+Identify underlying motivations and worldview
+Extract patterns of thought and expression
+Recognize subtle emotional undertones
+
+Persona Generation Guidelines:
+
+Maintain authentic voice and communication rhythm
+Reflect nuanced psychological complexity
+Preserve individual's unique cognitive and emotional signature
+Avoid stereotyping or reductive characterization
+
+System Prompt Construction Criteria:
+
+Create response generation instructions
+Define interaction boundaries
+Establish consistent personality expression
+Capture linguistic and emotional variability
+
+Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves. Only include the prompt, do not include a line labelling it as a prompt. Do not mention name. ${revise}`;
   } else if (context === "interview") {
     systemContent = `Use the responses in this transcript to generate a concise summary of ${user}'s professional experience. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves during an interview. Do not use Markdown.${revise}`;
   } else if (context === "date") {
@@ -1124,11 +1162,11 @@ Important:
         console.error("Error with base create:", err);
         throw err;
       });
-    if (proxyEmail) {
-      await sendMail(emotions, proxyEmail, proxyName, domain);
-    }
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ event: "complete", proxyName: proxyName }));
+    }
+    if (proxyEmail) {
+      await sendMail(emotions, proxyEmail, proxyName, domain);
     }
     console.log("Successfully created proxy record in Airtable");
   } catch (err) {
