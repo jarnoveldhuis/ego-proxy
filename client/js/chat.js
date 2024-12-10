@@ -684,18 +684,18 @@ async function updateProxy(event) {
   event.preventDefault(); // Prevent default form submission
 
   // Get form values
-  const contentId = document.getElementById('contentIdField').value;
-  const content = document.getElementById('contentField').value;
+  const contentId = document.getElementById("contentIdField").value;
+  const content = document.getElementById("contentField").value;
 
   // Disable save button to prevent multiple clicks
-  const saveButton = document.getElementById('save');
+  const saveButton = document.getElementById("save");
   saveButton.disabled = true;
 
   try {
-    const response = await fetch('/update-proxy', {
-      method: 'POST',
+    const response = await fetch("/update-proxy", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({ contentId, content }),
     });
@@ -705,17 +705,16 @@ async function updateProxy(event) {
     if (response.ok && data.success) {
       // Optionally, you can update the UI with the new profile data here
     } else {
-      alert(data.error || 'Update failed. Please try again.');
+      alert(data.error || "Update failed. Please try again.");
     }
   } catch (error) {
-    console.error('Error updating profile:', error);
-    alert('An error occurred while updating the profile.');
+    console.error("Error updating profile:", error);
+    alert("An error occurred while updating the profile.");
   } finally {
     // Re-enable the save button
     saveButton.disabled = false;
   }
 }
-
 
 function updateContent() {
   const selectElement = document.getElementById("contextSelect");
@@ -729,7 +728,6 @@ function updateContent() {
 
   let params = new URLSearchParams(window.location.href);
   if (params.has("share")) {
-    
     document.getElementById("profileLabel").style.display = "none";
     document.getElementById("editForm").style.display = "none";
     document.getElementById("tabDescription").style.display = "none";
@@ -745,7 +743,7 @@ function updateContent() {
     document.getElementById("practice").classList.remove("active");
     document.getElementById("share-tab").classList.add("active");
     document.getElementById("share").classList.add("active");
-    
+
     document.getElementById("share").classList.add("show");
     document.getElementById("testProxy").innerText = "Begin";
     document
@@ -809,7 +807,6 @@ function checkParams(url) {
 function testUrl(url) {
   window.open(url, "_blank");
 }
-
 
 function redirectToUrl(url) {
   let newUrl = new URL(url);
@@ -959,7 +956,6 @@ function train() {
       break;
   }
 }
-
 
 function toggleTraining() {
   console.log("Toggling training button");
@@ -1384,7 +1380,7 @@ function updateUrl(context) {
 
     var queryStringWithoutGuests = paramsWithoutGuests
       .toString()
-      .replace(/\+/g, " ");
+      .replace(/\+/g, "%20");
 
     shareUrl = newUrl + "?" + queryStringWithoutGuests + "&share";
     trainingUrl = newUrl + "?training=true&" + queryString;
@@ -1606,11 +1602,11 @@ async function initialize() {
       }
     }
     // hideAlert(document.getElementById("contextUpdated"));
-    // const initialActiveTab = myTab.querySelector(".nav-link.active");
+    const initialActiveTab = myTab.querySelector(".nav-link.active");
     // if (initialActiveTab) {
     //   updateTabDescription(initialActiveTab.id);
     // }
-
+    updateTabDescription(initialActiveTab.id);
     myTab.addEventListener("shown.bs.tab", function (event) {
       const activatedTab = event.target; // Newly activated tab
       updateTabDescription(activatedTab.id);
@@ -1640,8 +1636,6 @@ async function initialize() {
       alertElement.classList.remove("show");
       alertElement.style.zIndex = "";
     }
-
-
 
     // document
     //   .querySelector("#contextUpdated .btn-close")
