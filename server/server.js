@@ -55,6 +55,22 @@ app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "../views"));
 app.use(express.static(path.join(__dirname, "../client")));
 
+const TIMEOUT_DURATION = 25000; // 25 seconds (giving some buffer before Heroku's 30s timeout)
+
+app.use((req, res, next) => {
+  const timeout = setTimeout(() => {
+    res.status(503).render("error", {
+      message: "The request timed out. Please try again later.",
+      error: { status: 503, stack: "" },
+    });
+  }, TIMEOUT_DURATION);
+
+  res.on("finish", () => clearTimeout(timeout));
+  res.on("close", () => clearTimeout(timeout));
+
+  next();
+});
+
 // Rate Limiter
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -217,122 +233,145 @@ app.post("/ask/", async (req, res) => {
     tutorial,
   } = req.body;
 
-  if (!question || !submitTo || !transcript || !siteId) {
-    return res.status(400).send({ error: "Missing required fields" });
-  }
-
-  const dataForSiteId = globalDataStore[siteId];
-  if (!dataForSiteId) {
-    return res.status(400).send({ error: "Data not found for siteId" });
-  }
-
-  const emotions = "Angry, Confused, Laugh, Sad, Fear, Disgust, Embarrassed";
-  const userMessage = `Add a single line of dialogue to this script to advance the plot. Never add more than one line of dialogue. Each line should express one of the following emotions: ${emotions}.\nBegin your response with "${submitTo}:" and include the relevant emotions in parentheses at the very end of your response. For example:\n${submitTo}: I'm feeling great today! (Joy)\nDo not use any other expressions than the ones listed and do not use any of these emotions twice in a row. Never change the casing of the name. `;
-
-  const proxies = dataForSiteId.proxies;
-  const context = dataForSiteId.context;
-  const profile = proxies[submitAs] ? proxies[submitAs][siteId] : "";
-  currentSpeaker = submitTo;
-  const currentProxy = proxies[currentSpeaker] || {};
-  voice = ELEVENLABS_API_ENDPOINT;
-
-  if (currentSpeaker in ELEVENLABS_ENDPOINTS) {
-    voice = ELEVENLABS_ENDPOINTS[currentSpeaker];
-    console.log("Voice:", voice);
-  } else if (ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity]) {
-    voice = ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity];
-  } else {
-    console.log("Generic speaker:", currentSpeaker);
-  }
-
-  const parts = req.hostname.split(".");
-  const subdomain = parts.length > 1 ? parts[0] : "";
-
-  console.log("Transcript length:", transcript.length);
-
-  if (transcript.length > transcriptThreshold && (training || tutorial)) {
-    try {
-      console.log("Transcript summary conditions met. Summarizing...");
-      const transcriptSummary = await summarizeTranscript(
-        transcript,
-        siteId,
-        subdomain,
-        profile
-      );
-      console.log("Transcript summarized successfully: ", transcriptSummary);
-
-      let proxyData = await findProxyDataByName(subdomain);
-
-      if (proxyData) {
-        await base("Proxies").update(proxyData.id, {
-          [siteId]: transcriptSummary,
-        });
-      } else {
-        console.error(`No matching row found for proxyName: ${subdomain}`);
-        res.send({
-          error: `No matching row found for proxyName: ${subdomain}`,
-        });
-      }
-
-      proxyData = await findProxyDataByName(subdomain);
-      proxies[proxyData.Proxy].message = proxyData.message;
-
-      const proxyMessage =
-        `${currentProxy.message} This character has just updated its personality.` ||
-        "Default speaker message";
-
-      context.message = `${proxyData.Proxy} has updated itself to use the following personality: "${transcriptSummary}"\n ${proxyData.Proxy} will introduce themself, provide an overview of their personality and keep the conversation flowing with questions.\n`;
-
-      const systemMessage = `${proxyMessage}\n ${context.message}\n`;
-
-      const freshUserMessage = `${userMessage}${context.message}`;
-
-      const payload = createPayload(systemMessage, freshUserMessage);
-      console.log("Training Complete Payload:", payload);
-      console.log("Getting assistant response...");
-      const assistantMessage = await getAssistantResponse(payload);
-
-      res.send({
-        personalityUpdated: true,
-        transcriptSummary: transcriptSummary,
-        answer: `${submitTo}: Personality updated! (Friendly)`,
+  // Set a specific timeout for this route
+  let routeTimeout = setTimeout(() => {
+    if (!res.headersSent) {
+      return res.status(503).json({
+        error:
+          "Request timed out. The server took too long to process your request.",
       });
-    } catch (error) {
-      console.error("Error summarizing transcript:", error);
-      res.status(500).send({ error: "Failed to summarize transcript" });
     }
-  } else {
-    const contextMessage =
-      dataForSiteId.context.message || "Default general message";
-    const proxyMessage = currentProxy.message || "";
+  }, 25000);
 
-    const progress = Math.floor(
-      (transcript.length / transcriptThreshold) * 100
-    );
-    let storyProgress = `\nThe story is now ${progress}% complete. Use the transcript thus far and Joseph Campbells' Hero's journey framework to inform what happens next.\n`;
+  try {
+    if (!question || !submitTo || !transcript || !siteId) {
+      return res.status(400).send({ error: "Missing required fields" });
+    }
 
-    const previousProxy = proxies[submitAs] || "";
-    const previousProxyProfile = previousProxy[siteId]
-      ? " Here is the profile of the person you're speaking to: \n" +
-        previousProxy[siteId]
-      : "";
+    const dataForSiteId = globalDataStore[siteId];
+    if (!dataForSiteId) {
+      return res.status(400).send({ error: "Data not found for siteId" });
+    }
 
-    let characters = proxyList.filter((proxy) => proxy.toLowerCase() !== "you");
-    
-    let systemMessage = `You are a screenwriter writing the next line of dialogue for one of the following characters: ${characters.join(
-      ", "
-    )}. Here is a summary of each each character's personality: ${Object.keys(
-      proxies
-    )
-      .map((proxy) => `${proxy}: ${proxies[proxy].message}`)
-      .join("\n")}\n ${contextMessage}`;
-    const payload = createPayload(
-      systemMessage,
-      transcript + storyProgress + userMessage
-    );
-    console.log("Response Payload:", payload);
-    const assistantMessage = await getAssistantResponse(payload);
+    const emotions = "Angry, Confused, Laugh, Sad, Fear, Disgust, Embarrassed";
+    const userMessage = `Add a single line of dialogue to this script to advance the plot. Never add more than one line of dialogue. Each line should express one of the following emotions: ${emotions}.\nBegin your response with "${submitTo}:" and include the relevant emotions in parentheses at the very end of your response. For example:\n${submitTo}: I'm feeling great today! (Joy)\nDo not use any other expressions than the ones listed and do not use any of these emotions twice in a row. Never change the casing of the name. `;
+
+    const proxies = dataForSiteId.proxies;
+    const context = dataForSiteId.context;
+    const profile = proxies[submitAs] ? proxies[submitAs][siteId] : "";
+    currentSpeaker = submitTo;
+    const currentProxy = proxies[currentSpeaker] || {};
+    voice = ELEVENLABS_API_ENDPOINT;
+
+    if (currentSpeaker in ELEVENLABS_ENDPOINTS) {
+      voice = ELEVENLABS_ENDPOINTS[currentSpeaker];
+      console.log("Voice:", voice);
+    } else if (ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity]) {
+      voice = ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity];
+    } else {
+      console.log("Generic speaker:", currentSpeaker);
+    }
+
+    const parts = req.hostname.split(".");
+    const subdomain = parts.length > 1 ? parts[0] : "";
+
+    console.log("Transcript length:", transcript.length);
+
+    if (transcript.length > transcriptThreshold && (training || tutorial)) {
+      try {
+        console.log("Transcript summary conditions met. Summarizing...");
+        const transcriptSummary = await summarizeTranscript(
+          transcript,
+          siteId,
+          subdomain,
+          profile
+        );
+        console.log("Transcript summarized successfully: ", transcriptSummary);
+
+        let proxyData = await findProxyDataByName(subdomain);
+
+        if (proxyData) {
+          await base("Proxies").update(proxyData.id, {
+            [siteId]: transcriptSummary,
+          });
+        } else {
+          console.error(`No matching row found for proxyName: ${subdomain}`);
+          res.send({
+            error: `No matching row found for proxyName: ${subdomain}`,
+          });
+        }
+
+        proxyData = await findProxyDataByName(subdomain);
+        proxies[proxyData.Proxy].message = proxyData.message;
+
+        const proxyMessage =
+          `${currentProxy.message} This character has just updated its personality.` ||
+          "Default speaker message";
+
+        context.message = `${proxyData.Proxy} has updated itself to use the following personality: "${transcriptSummary}"\n ${proxyData.Proxy} will introduce themself, provide an overview of their personality and keep the conversation flowing with questions.\n`;
+
+        const systemMessage = `${proxyMessage}\n ${context.message}\n`;
+
+        const freshUserMessage = `${userMessage}${context.message}`;
+
+        const payload = createPayload(systemMessage, freshUserMessage);
+        console.log("Training Complete Payload:", payload);
+        console.log("Getting assistant response...");
+        const assistantMessage = await getAssistantResponse(payload);
+
+        res.send({
+          personalityUpdated: true,
+          transcriptSummary: transcriptSummary,
+          answer: `${submitTo}: Personality updated! (Friendly)`,
+        });
+      } catch (error) {
+        console.error("Error summarizing transcript:", error);
+        res.status(500).send({ error: "Failed to summarize transcript" });
+      }
+    } else {
+      const contextMessage =
+        dataForSiteId.context.message || "Default general message";
+      const proxyMessage = currentProxy.message || "";
+
+      const progress = Math.floor(
+        (transcript.length / transcriptThreshold) * 100
+      );
+      let storyProgress = `\nThe story is now ${progress}% complete. Use the transcript thus far and Joseph Campbells' Hero's journey framework to inform what happens next.\n`;
+
+      const previousProxy = proxies[submitAs] || "";
+      const previousProxyProfile = previousProxy[siteId]
+        ? " Here is the profile of the person you're speaking to: \n" +
+          previousProxy[siteId]
+        : "";
+
+      let characters = proxyList.filter(
+        (proxy) => proxy.toLowerCase() !== "you"
+      );
+
+      let systemMessage = `You are a screenwriter writing the next line of dialogue for one of the following characters: ${characters.join(
+        ", "
+      )}. Here is a summary of each each character's personality: ${Object.keys(
+        proxies
+      )
+        .map((proxy) => `${proxy}: ${proxies[proxy].message}`)
+        .join("\n")}\n ${contextMessage}`;
+      const payload = createPayload(
+        systemMessage,
+        transcript + storyProgress + userMessage
+      );
+      console.log("Response Payload:", payload);
+      const assistantMessage = await getAssistantResponse(payload);
+      res.send({ answer: assistantMessage });
+    }
+    clearTimeout(routeTimeout);
     res.send({ answer: assistantMessage });
+  } catch (error) {
+    // Clear timeout to prevent double response
+    clearTimeout(routeTimeout);
+    console.error("Error in /ask route:", error);
+    res
+      .status(500)
+      .json({ error: "An error occurred while processing your request." });
   }
 });
 
@@ -409,7 +448,15 @@ app.post("/create-proxy", upload.single("file"), async (req, res) => {
     req.body.ethnicity !== "Other"
       ? req.body.ethnicity
       : req.body.otherEthnicity;
-
+  // Set a timeout for this route
+  let routeTimeout = setTimeout(() => {
+    if (!res.headersSent) {
+      return res.status(503).json({
+        message:
+          "Request timed out. The server took too long to process your request.",
+      });
+    }
+  }, 25000);
   try {
     const nameExists = await checkNameExists(proxyName);
     if (nameExists) {
@@ -442,6 +489,7 @@ app.post("/create-proxy", upload.single("file"), async (req, res) => {
         message: "Update about your request...",
       })
     );
+    clearTimeout(routeTimeout);
     res.status(202).json({
       message: "Processing started, you will be notified upon completion.",
     });
@@ -453,6 +501,8 @@ app.post("/create-proxy", upload.single("file"), async (req, res) => {
       }
     );
   } catch (error) {
+    clearTimeout(routeTimeout);
+
     console.error("Error:", error);
     res.status(500).json({ message: error.message });
   }
@@ -474,6 +524,23 @@ wss.on("connection", (ws) => {
     } catch (error) {
       console.error("Error parsing WebSocket message:", error);
     }
+  });
+});
+
+app.use((req, res, next) => {
+  res.status(404).render('error', {
+    message: 'Page not found',
+    error: { status: 404, stack: '' }
+  });
+});
+
+app.use((err, req, res, next) => {
+
+  console.error(err.stack);
+  res.status(err.status || 500);
+  res.render('error', {
+    message: err.message || 'Something went wrong!',
+    error: process.env.NODE_ENV === 'development' ? err : {}
   });
 });
 
@@ -505,7 +572,7 @@ function updateContextMessages(
     globalDataStore[
       siteId
     ].context.message = `Say hello and introduce yourself by your name. Share a detailed overview of yourself. Ask questions to keep a conversation flowing.`;
-  } 
+  }
 
   // Update the context message for the interview site
   if (siteId == "interview" && lowerCaseProxies[subdomain].meet !== undefined) {
