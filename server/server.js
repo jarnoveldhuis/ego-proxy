@@ -361,10 +361,9 @@ app.post("/ask/", async (req, res) => {
       );
       console.log("Response Payload:", payload);
       const assistantMessage = await getAssistantResponse(payload);
+      clearTimeout(routeTimeout);
       res.send({ answer: assistantMessage });
     }
-    clearTimeout(routeTimeout);
-    res.send({ answer: assistantMessage });
   } catch (error) {
     // Clear timeout to prevent double response
     clearTimeout(routeTimeout);
