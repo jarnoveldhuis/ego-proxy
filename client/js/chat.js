@@ -535,18 +535,25 @@ async function askBot(event) {
     });
 
     const data = await fetchResponse.json();
+    
+    if (!fetchResponse.ok) {
+      throw new Error(data.error || 'An error occurred while processing your request');
+    }
+
     if (data.personalityUpdated) {
       trainingProgressElement.textContent = `Finished!`;
       settingsModal.show();
       document.getElementById("contentField").value = data.transcriptSummary;
       document.getElementById("toggleButton").style.display = "inline-block";
-      // setTimeout(() => {
-      //   showAlert(document.getElementById("contextUpdated"));
-      // }, 1000);
 
       proxies[Object.keys(proxies)[0]].meet = data.transcriptSummary;
       toggleTraining();
     }
+
+    if (!data.answer) {
+      throw new Error('No response received from the server');
+    }
+
     let avatar = data.answer.split(":")[0].trim();
     console.Object;
 

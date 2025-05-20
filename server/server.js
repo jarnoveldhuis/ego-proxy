@@ -13,6 +13,7 @@ const axios = require("axios");
 const nodemailer = require("nodemailer");
 const rateLimit = require("express-rate-limit");
 const Airtable = require("airtable");
+const { openai, elevenLabs, ELEVENLABS_ENDPOINTS } = require("./services/api");
 require("dotenv").config();
 
 // Constants
@@ -21,24 +22,8 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const port = process.env.PORT || 3001;
 
-const API_ENDPOINT =
-  process.env.OPENAI_API_ENDPOINT ||
-  "https://api.openai.com/v1/chat/completions";
-const ELEVENLABS_API_ENDPOINT =
-  process.env.ELEVENLABS_API_ENDPOINT ||
-  "https://api.elevenlabs.io/v1/text-to-speech/GBv7mTt0atIp3Br8iCZE";
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
 const [email, password] = process.env.EMAIL_CREDENTIALS.split(":");
-
-const HEADERS = {
-  Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-  "Content-Type": "application/json",
-};
-
-const ELEVENLABS_HEADERS = {
-  "xi-api-key": process.env.ELEVENLABS_API_KEY,
-  "Content-Type": "application/json",
-};
 
 // VARIABLES
 const clients = {};
@@ -88,21 +73,6 @@ Airtable.configure({
   endpointUrl: "https://api.airtable.com",
   apiKey: AIRTABLE_TOKEN,
 });
-
-// ElevenLabs Endpoints
-const ELEVENLABS_ENDPOINTS = {
-  Adam: "https://api.elevenlabs.io/v1/text-to-speech/lj8oyquj3C1V08Xs4x9f",
-  Stav: "https://api.elevenlabs.io/v1/text-to-speech/g11iLvGRfVTIS78ofuHa",
-  Nick: "https://api.elevenlabs.io/v1/text-to-speech/e3oQ7D1OPPzhbJU50Qxp",
-  Mike: "https://api.elevenlabs.io/v1/text-to-speech/EL0wUO72Pc3LfZ2jqe9b",
-  Piero: "https://api.elevenlabs.io/v1/text-to-speech/lgy8xTZLCdWp5GxhftID",
-  Jarno: "https://api.elevenlabs.io/v1/text-to-speech/6xnAUTtxFAYoyHtOWgDN",
-  YarnMan: "https://api.elevenlabs.io/v1/text-to-speech/6xnAUTtxFAYoyHtOWgDN",
-  Ivan: "https://api.elevenlabs.io/v1/text-to-speech/e3oQ7D1OPPzhbJU50Qxp",
-  Male: "https://api.elevenlabs.io/v1/text-to-speech/y1adqrqs4jNaANXsIZnD",
-  Female: "https://api.elevenlabs.io/v1/text-to-speech/9iZbnYLpicE89JhjTrR5",
-  Donnie: "https://api.elevenlabs.io/v1/text-to-speech/X2295PCUkl7636D0KoSI",
-};
 
 // Variables
 let currentSpeaker = "";
@@ -261,19 +231,20 @@ app.post("/ask/", async (req, res) => {
     const profile = proxies[submitAs] ? proxies[submitAs][siteId] : "";
     currentSpeaker = submitTo;
     const currentProxy = proxies[currentSpeaker] || {};
-    voice = ELEVENLABS_API_ENDPOINT;
+    voice = ELEVENLABS_ENDPOINTS[currentSpeaker] || ELEVENLABS_ENDPOINTS.Male;
 
     if (currentSpeaker in ELEVENLABS_ENDPOINTS) {
       voice = ELEVENLABS_ENDPOINTS[currentSpeaker];
       console.log("Voice:", voice);
-    } else if (ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity]) {
+    } else if (
+      proxies[currentSpeaker] &&
+      proxies[currentSpeaker].genderIdentity &&
+      ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity]
+    ) {
       voice = ELEVENLABS_ENDPOINTS[proxies[currentSpeaker].genderIdentity];
     } else {
-      console.log("Generic speaker:", currentSpeaker);
+      console.log("Using default voice for:", currentSpeaker);
     }
-
-    const parts = req.hostname.split(".");
-    const subdomain = parts.length > 1 ? parts[0] : "";
 
     console.log("Transcript length:", transcript.length);
 
@@ -283,26 +254,28 @@ app.post("/ask/", async (req, res) => {
         const transcriptSummary = await summarizeTranscript(
           transcript,
           siteId,
-          subdomain,
+          currentSpeaker,
           profile
         );
         console.log("Transcript summarized successfully: ", transcriptSummary);
 
-        let proxyData = await findProxyDataByName(subdomain);
+        let proxyData = await findProxyDataByName(currentSpeaker);
 
         if (proxyData) {
           await base("Proxies").update(proxyData.id, {
             [siteId]: transcriptSummary,
           });
         } else {
-          console.error(`No matching row found for proxyName: ${subdomain}`);
+          console.error(
+            `No matching row found for proxyName: ${currentSpeaker}`
+          );
           res.send({
-            error: `No matching row found for proxyName: ${subdomain}`,
+            error: `No matching row found for proxyName: ${currentSpeaker}`,
           });
         }
 
-        proxyData = await findProxyDataByName(subdomain);
-        proxies[proxyData.Proxy].message = proxyData.message;
+        proxyData = await findProxyDataByName(currentSpeaker);
+        proxies[currentSpeaker].message = proxyData.message;
 
         const proxyMessage =
           `${currentProxy.message} This character has just updated its personality.` ||
@@ -411,24 +384,9 @@ app.post("/synthesize", apiLimiter, async (req, res) => {
     console.log("voice:", voice);
     console.log("currentSpeaker:", currentSpeaker);
 
-    const elevenLabsApiEndpoint = voice || ELEVENLABS_API_ENDPOINT;
-    const data = {
-      text,
-      model_id: "eleven_monolingual_v1",
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-        style: 0.5,
-        use_speaker_boost: true,
-      },
-    };
-
-    const response = await axios.post(elevenLabsApiEndpoint, data, {
-      headers: ELEVENLABS_HEADERS,
-      responseType: "arraybuffer",
-    });
+    const audioBuffer = await elevenLabs.synthesizeSpeech(text, voice);
     res.set("Content-Type", "audio/mpeg");
-    res.send(Buffer.from(response.data, "binary"));
+    res.send(audioBuffer);
   } catch (error) {
     console.error("Error:", error);
     res.status(500).send({ error: "Failed to communicate with ElevenLabs." });
@@ -465,7 +423,7 @@ app.post("/create-proxy", upload.single("file"), async (req, res) => {
 
     const base64String = req.file.buffer.toString("base64");
     const photoDescription = await describeImageBase(base64String);
-
+    console.log(photoDescription);
     if (photoDescription.toLowerCase().includes("error")) {
       console.log("Error detected in photo description, sending 400 response");
       return res.status(409).json({
@@ -527,19 +485,18 @@ wss.on("connection", (ws) => {
 });
 
 app.use((req, res, next) => {
-  res.status(404).render('error', {
-    message: 'Page not found',
-    error: { status: 404, stack: '' }
+  res.status(404).render("error", {
+    message: "Page not found",
+    error: { status: 404, stack: "" },
   });
 });
 
 app.use((err, req, res, next) => {
-
   console.error(err.stack);
   res.status(err.status || 500);
-  res.render('error', {
-    message: err.message || 'Something went wrong!',
-    error: process.env.NODE_ENV === 'development' ? err : {}
+  res.render("error", {
+    message: err.message || "Something went wrong!",
+    error: process.env.NODE_ENV === "development" ? err : {},
   });
 });
 
@@ -591,37 +548,7 @@ function updateContextMessages(
 
 // Describe Image Base
 async function describeImageBase(base64) {
-  const apiEndpoint = "https://api.openai.com/v1/chat/completions";
-  const response = await axios.post(
-    apiEndpoint,
-    {
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "You are an author describing a character inspired by this picture. Describe the image as an a children's cartoon to your illustrator. Do not mention facial expressions or anything in the backgroud. The background must be pure black. If a description can not be generated, return the word 'error:' with a description of the issue. Do not identify the individual.",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${base64}`,
-              },
-            },
-          ],
-        },
-      ],
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-    }
-  );
-  return response.data.choices[0].message.content;
+  return await openai.describeImage(base64);
 }
 
 // Fetch context and proxies
@@ -904,16 +831,7 @@ function createPayload(systemMsg, userMsg) {
 
 // Get Assistant Response from OpenAI
 async function getAssistantResponse(payload) {
-  try {
-    const response = await axios.post(API_ENDPOINT, payload, {
-      headers: HEADERS,
-    });
-    console.log("Data:", response.data);
-    return response.data.choices[0].message.content.trim();
-  } catch (error) {
-    console.error("Error while getting assistant response:", error);
-    throw new Error("Failed to communicate with OpenAI.");
-  }
+  return await openai.chatCompletion(payload);
 }
 
 // Check if Name Exists in Airtable
@@ -1121,7 +1039,6 @@ Important:
   };
 
   try {
-    const apiEndpoint = "https://api.openai.com/v1/images/generations";
     sendProgress();
 
     const emotionInstructions = `I am generating images to represent different emotions and facial expressions. Render a ${ethnicity} ${genderIdentity} staring straight ahead against a pure black background in an extreme state of`;
@@ -1143,8 +1060,7 @@ Important:
       (desc) => `${desc}\n${avatarDescription}`
     );
 
-    const processResponse = (response, index) => {
-      const url = response.data.data[0].url;
+    const processResponse = (url, index) => {
       switch (index) {
         case 0:
           emotions.speakUrl = url;
@@ -1182,24 +1098,15 @@ Important:
     };
 
     const requests = prompts.map((prompt, index) =>
-      axios
-        .post(
-          apiEndpoint,
-          {
-            model: "dall-e-3",
-            prompt,
-            n: 1,
-            size: "1024x1024",
-          },
-          { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } }
-        )
-        .then((response) => {
-          processResponse(response, index);
+      openai
+        .generateImage(prompt)
+        .then((url) => {
+          processResponse(url, index);
           sendProgress();
         })
         .catch((err) => {
           console.error(
-            `Error with axios post for prompt index ${index}:`,
+            `Error generating image for prompt index ${index}:`,
             err
           );
         })
