@@ -57,7 +57,7 @@ const WebSocketManager = {
         window.location.href = `http://${data.proxyName}.${WebSocketManager.environment}/meet`;
         break;
       case "progress":
-        UI.updateProgressBar(data.progress);
+        UI.updateProgressBar(data.percentage);
         break;
       case "clientId":
         this.clientId = data.clientId;
