@@ -946,7 +946,7 @@ async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyNa
     confused: "Confusion.",
     joy: "LAUGHTER!",
     sad: "Sadness.",
-    disgust: "Disgust/",
+    disgust: "Disgust.",
     angry: "Anger.",
     fear: "Fear.",
     embarrassed: "Shame",
