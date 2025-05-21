@@ -170,13 +170,13 @@ function handleReaction(avatar, emotion) {
       };
     } else if (!proxy.laughSounds && emotion.toLowerCase() === "laugh") {
       updateAvatar(avatar, "joy".toLowerCase());
-      botContainer.classList.add("laughing");
+      // botContainer.classList.add("laughing");
 
-      setTimeout(() => {
-        updateAvatar(avatar, "friendly");
-        botContainer.classList.remove("laughing");
-        resolve();
-      }, laughLength);
+      // setTimeout(() => {
+      //   updateAvatar(avatar, "friendly");
+      //   botContainer.classList.remove("laughing");
+      //   resolve();
+      // }, laughLength);
     } else {
       updateAvatar(avatar, emotion.toLowerCase());
       resolve();
@@ -1180,15 +1180,21 @@ function beginTraining(transcriptText) {
 }
 
 function doneTyping() {
-  submitAs = document.getElementById("submitAs").value;
-  if (submitAs in proxies) {
-    updateAvatar(submitAs, "speak");
-  } else {
-    updateAvatar(avatar, "intrigued");
-  }
-  avatar = document.getElementById("submitAs").value;
+  const currentSubmitAs = document.getElementById("submitAs").value; // Who was typing
 
-  updateAvatar(avatar, "friendly");
+  if (currentSubmitAs in proxies) {
+    // If the user was typing as a specific proxy (e.g., "Shadow"),
+    // and that proxy's avatar was showing the "speak" state.
+    // Revert that specific proxy's avatar to "friendly".
+    console.log(`User done typing as proxy: ${currentSubmitAs}. Reverting ${currentSubmitAs} to friendly.`);
+    updateAvatar(currentSubmitAs, "friendly");
+  } else {
+    // If the user was typing as "You" (or another non-proxy value),
+    // the main bot's avatar (stored in the global 'avatar' variable) was set to "intrigued".
+    // Revert this main bot's avatar to "friendly".
+    console.log(`User done typing as non-proxy. Reverting main bot avatar (${avatar}) to friendly.`);
+    updateAvatar(avatar, "friendly"); // 'avatar' is the global variable for the current bot on screen
+  }
 }
 
 function extractName(userMessage) {

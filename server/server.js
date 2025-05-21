@@ -941,8 +941,8 @@ async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyNa
     disgust: "disgust.",
     angry: "anger.",
     fear: "fear.",
-    embarrassed: "embarrassment.", // Matched user's input
-    intrigued: "engagement and curiosity", // Matched user's input, corrected spelling
+    embarrassed: "embarrassment. Blushing.", // Matched user's input
+    intrigued: "deeply intrigued.", // Matched user's input, corrected spelling
   };
   const generatedEmotionUrls = { 
     speak: null, friendly: null, confused: null, joy: null, sad: null,
@@ -988,7 +988,7 @@ async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyNa
     ws.send(JSON.stringify({ type: "info", event: "emotionGenerationBatchStart", message: "Generating all emotional expressions..." }));
 
     const emotionEditPromises = Object.entries(emotionsToGenerate).map(async ([emotionKey, emotionDescription]) => {
-      const emotionSpecificPrompt = `The character should be expressing ${emotionDescription}. ${baseStyleDefinition}`;
+      const emotionSpecificPrompt = `The character should appear the same but conveying ${emotionDescription}. ${baseStyleDefinition}`;
       console.log(`  [Starting] Generation for ${emotionKey} for ${proxyName}`);
       try {
         const finalEmotionImageBase64 = await openai.editImage(styledBaseImageBase64, emotionSpecificPrompt);
