@@ -127,7 +127,7 @@ app.get("/", async (req, res) => {
         return res.render("create", { proxyDomain });
       }
       // Assuming siteId is the same as subdomain for direct proxy access
-      res.redirect(`${protocol}://${req.get("host")}/${subdomain}/meet`); 
+      res.redirect(`${protocol}://${subdomain}.${req.get("host")}/meet`); 
     } catch (error) {
       console.error("Error fetching proxies for subdomain redirect:", error);
       res.render("create", { proxyDomain });
@@ -431,15 +431,6 @@ app.post("/create-proxy", upload.single("file"), async (req, res) => {
       return res.status(409).json({ message: "Name is already in use. Please choose a different name." });
     }
     
-    // const base64String = req.file.buffer.toString("base64");
-    // const photoDescription = await openai.describeImage(base64String); 
-    // if (photoDescription.toLowerCase().includes("error:")) {
-    //   clearTimeout(routeHttpTimeout);
-    //   return res.status(400).json({ 
-    //     message: photoDescription + " Please try again with a different photo that clearly shows a character.",
-    //   });
-    // }
-
     const ws = clients[clientId];
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       clearTimeout(routeHttpTimeout);
@@ -728,11 +719,11 @@ function fetchProxies(submitOptions) {
         const sanitizedOptions = submitOptions.map(option => typeof option === 'string' ? option.replace(/'/g, "\\'") : '');
 
         const formula = sanitizedOptions
-            .filter(Boolean) // Remove any empty strings after sanitization
+            .filter(Boolean) 
             .map(option => `LOWER({Proxy}) = LOWER('${option}')`)
             .join(", ");
 
-        if (!formula) return resolve([]); // If no valid options, return empty
+        if (!formula) return resolve([]); 
 
         base("Proxies")
             .select({ filterByFormula: `OR(${formula})` })
@@ -784,7 +775,7 @@ async function findBase(siteId) {
   for (const baseName of basesToCheck) {
     try {
         const records = await base(baseName)
-            .select({ filterByFormula: `{siteId} = '${siteId.replace(/'/g, "\\'")}'`, maxRecords: 1 }) // Sanitize siteId
+            .select({ filterByFormula: `{siteId} = '${siteId.replace(/'/g, "\\'")}'`, maxRecords: 1 }) 
             .firstPage();
         if (records.length > 0) {
             console.log(`SiteId "${siteId}" found in base: "${baseName}"`);
@@ -856,7 +847,7 @@ async function sendMail(generatedUrls, proxyEmail, proxyName, domain) {
     console.error("Proxy email is missing for sendMail");
     return Promise.reject(new Error("Proxy email is missing. Cannot send confirmation."));
   }
-  if (!generatedUrls || !generatedUrls.joy) { // Check specific joyUrl from the new structure
+  if (!generatedUrls || !generatedUrls.joy) { 
     console.error("Joy URL is missing in generatedUrls for sendMail");
     return Promise.reject(new Error("Required image URL (joy) for email is missing."));
   }
@@ -931,28 +922,27 @@ Optimize this summary to be used as a ChatGPT system prompt to inform how the ch
   } else {
     systemContent = `Summarize the personality of ${user} based on this transcript. ${revise}`;
   }
-  // console.log("Summarize transcript systemContent:", systemContent.substring(0,100) + "...");
   return await generateContent(transcript, siteId, systemContent); 
 }
 
-// Modified initiateProxyCreation to use the user's Airtable .create() style
+// Updated initiateProxyCreation for CONCURRENT emotion image generation
 async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyName, proxyEmail) {
   console.log(`Initiating proxy creation for: ${proxyName}, Ethnicity: ${ethnicity}, Gender: ${genderIdentity}`);
   const domain = req.get("host");
 
   const emotionsToGenerate = {
-    speak: "Speaking.",
-    friendly: "Friendliness!",
-    confused: "Confusion.",
-    joy: "LAUGHTER!",
-    sad: "Sadness.",
-    disgust: "Disgust.",
-    angry: "Anger.",
-    fear: "Fear.",
-    embarrassed: "Shame",
-    intrigued: "Curiousity.",
+    speak: "friendliness with mouth open.",
+    friendly: "friendliness with mouth closed.",
+    confused: "confusion.",
+    joy: "joyous LAUGHTER!",
+    sad: "sadness.",
+    disgust: "disgust.",
+    angry: "anger.",
+    fear: "fear.",
+    embarrassed: "embarrassment.", // Matched user's input
+    intrigued: "engagement and curiosity", // Matched user's input, corrected spelling
   };
-  const generatedEmotionUrls = { // Ensure all keys are initialized for Airtable
+  const generatedEmotionUrls = { 
     speak: null, friendly: null, confused: null, joy: null, sad: null,
     disgust: null, angry: null, fear: null, embarrassed: null, intrigued: null
   };
@@ -969,7 +959,7 @@ async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyNa
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ 
         type: "progress", 
-        event: "progress", 
+        event: "progress", // Matched user's frontend expectation
         percentage: percentageComplete, 
         message: stepMessage, 
         step: currentProgressSteps,
@@ -984,32 +974,55 @@ async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyNa
     const baseImageBuffer = req.file.buffer;
     const uploadedImageBase64 = baseImageBuffer.toString("base64");
 
-    const baseStyleDefinition = `Style: Low-Poly children's cartoon with geometric shapes and flat colors, emphasizing a clear, recognizable likeness of a ${ethnicity} ${genderIdentity} without detailed textures. Add a subtle psychedelic effect. The eyes must be directed straight forward. The background must be pure black. The overall emotion and expression should be exaggerated and extreme in a cartoonish way.`;
+    const baseStyleDefinition = `Style: Low-Poly children's cartoon with geometric shapes and flat colors, emphasizing a clear, recognizable likeness of a ${ethnicity} ${genderIdentity} without detailed textures. Add a subtle psychedelic effect. The eyes must be directed straight forward. The background must be pure black. The overall emotion and expression should be exaggerated in a cartoonish way.`;
     const neutralStylePrompt = `A neutral facial expression. ${baseStyleDefinition}`;
     
     console.log(`Generating styled base image for ${proxyName} with prompt: "${neutralStylePrompt.substring(0,100)}..."`);
     sendProgress("Applying base style to your image...");
     const styledBaseImageBase64 = await openai.editImage(uploadedImageBase64, neutralStylePrompt);
 
-    for (const [emotionKey, emotionDescription] of Object.entries(emotionsToGenerate)) {
-      const emotionSpecificPrompt = `${emotionDescription} ${baseStyleDefinition}`;
-      console.log(`Generating ${emotionKey} variation for ${proxyName} with prompt: "${emotionSpecificPrompt.substring(0,100)}..."`);
-      sendProgress(`Generating ${emotionKey} expression...`);
-      
-      const finalEmotionImageBase64 = await openai.editImage(styledBaseImageBase64, emotionSpecificPrompt);
-      generatedEmotionUrls[emotionKey] = await uploadBase64ToFirebase(finalEmotionImageBase64);
-    }
+    // CONCURRENTLY generate emotional variations
+    console.log(`Starting concurrent generation of emotional variations for ${proxyName}...`);
+    ws.send(JSON.stringify({ type: "info", event: "emotionGenerationBatchStart", message: "Generating all emotional expressions..." }));
 
-    console.log(`All images generated for ${proxyName}. Preparing to save to Airtable...`);
+    const emotionEditPromises = Object.entries(emotionsToGenerate).map(async ([emotionKey, emotionDescription]) => {
+      const emotionSpecificPrompt = `The character should be expressing ${emotionDescription}. ${baseStyleDefinition}`;
+      console.log(`  [Starting] Generation for ${emotionKey} for ${proxyName}`);
+      try {
+        const finalEmotionImageBase64 = await openai.editImage(styledBaseImageBase64, emotionSpecificPrompt);
+        console.log(emotionSpecificPrompt)
+        const url = await uploadBase64ToFirebase(finalEmotionImageBase64);
+        console.log(`  [Completed] ${emotionKey} for ${proxyName} - URL: ${url ? 'OK' : 'Failed Upload'}`);
+        sendProgress(`Generated ${emotionKey} expression`);
+        return { emotionKey, url, success: true };
+      } catch (error) {
+        console.error(`  [Failed] Generation for ${emotionKey} for ${proxyName}:`, error.message);
+        sendProgress(`Failed to generate ${emotionKey} expression`);
+        return { emotionKey, url: null, success: false, error: error.message };
+      }
+    });
+
+    const results = await Promise.allSettled(emotionEditPromises);
+
+    results.forEach(result => {
+      if (result.status === 'fulfilled' && result.value.success) {
+        generatedEmotionUrls[result.value.emotionKey] = result.value.url;
+      } else if (result.status === 'fulfilled' && !result.value.success) {
+        console.error(`Fulfilled but failed task for ${result.value.emotionKey}: ${result.value.error}`);
+      } else if (result.status === 'rejected') {
+        console.error(`An unexpected error occurred in an emotion generation promise (rejected):`, result.reason);
+      }
+    });
+    
+    console.log(`All emotional image generation tasks attempted for ${proxyName}. Preparing to save to Airtable...`);
     sendProgress("Saving proxy details to Airtable...");
     
-    // Using the user's preferred Airtable create structure with direct .catch()
     await base("Proxies").create({
         "Proxy": proxyName,
         "genderIdentity": genderIdentity,
+        // "ethnicity": ethnicity, // User's snippet for Airtable create did not include ethnicity
         "email": proxyEmail,
         "imagePrefix": `img/Guest/${proxyName}/`,
-        // Ensure URL is only added if it exists, otherwise Airtable might error on null in array
         "speak": generatedEmotionUrls.speak ? [{ url: generatedEmotionUrls.speak }] : undefined,
         "friendly": generatedEmotionUrls.friendly ? [{ url: generatedEmotionUrls.friendly }] : undefined,
         "confused": generatedEmotionUrls.confused ? [{ url: generatedEmotionUrls.confused }] : undefined,
@@ -1020,14 +1033,15 @@ async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyNa
         "angry": generatedEmotionUrls.angry ? [{ url: generatedEmotionUrls.angry }] : undefined,
         "embarrassed": generatedEmotionUrls.embarrassed ? [{ url: generatedEmotionUrls.embarrassed }] : undefined,
         "intrigued": generatedEmotionUrls.intrigued ? [{ url: generatedEmotionUrls.intrigued }] : undefined,
+        // "siteId": proxyName, // User's snippet for Airtable create did not include siteId
       })
       .catch((err) => {
         console.error("Error directly from Airtable base.create() during record creation:", err);
         let newError = new Error(`Airtable create failed directly. Status: ${err.statusCode || 'N/A'}. Message: ${err.message || 'No specific error message.'}. Type: ${err.error || 'N/A'}`);
         newError.statusCode = err.statusCode;
-        newError.type = err.error; // Airtable often uses 'error' for the type string
+        newError.type = err.error; 
         newError.originalError = err; 
-        throw newError; // Re-throw to be caught by the outer try-catch
+        throw newError; 
       });
 
     console.log(`Successfully created proxy record in Airtable for ${proxyName}`);
@@ -1042,18 +1056,18 @@ async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyNa
     }
     
     if (ws.readyState === WebSocket.OPEN) {
-      const finalPercentage = Math.floor((totalSteps / totalSteps) * 100);
+      const finalPercentage = 100; // Assuming all steps accounted for should lead to 100%
        ws.send(JSON.stringify({ 
            type: "progress", 
-           event: "proxyCreationProgress", 
+           event: "progress", // Use "progress" as per user's frontend code
            percentage: finalPercentage, 
            message: "All steps completed.", 
-           step: totalSteps, 
+           step: totalSteps, // Send final step count
            totalSteps: totalSteps 
        }));
       ws.send(JSON.stringify({ 
-        type: "success", 
-        event: "proxyCreated", 
+        type: "success", // Changed from "complete" to "success" for consistency with other type messages
+        event: "proxyCreated", // Keep "proxyCreated" as a specific event for success
         proxyName: proxyName, 
         domain: domain, 
         message: "Proxy created successfully! You can now meet your proxy.", 
@@ -1061,7 +1075,7 @@ async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyNa
       }));
     }
 
-  } catch (err) { // Outer catch
+  } catch (err) { 
     console.error(`Critical error during initiateProxyCreation for ${proxyName}:`);
     if (err && typeof err === 'object') {
         console.error("Error properties:", Object.getOwnPropertyNames(err));
@@ -1075,7 +1089,7 @@ async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyNa
     if (ws.readyState === WebSocket.OPEN) {
       const errorMessage = (err && err.message) ? err.message : "An undefined error occurred during proxy creation.";
       let errorDetails = err ? (err.details || JSON.stringify(err, Object.getOwnPropertyNames(err))) : "Error object was undefined";
-       if (err && err.originalError && err.originalError.message) { // Check for wrapped original error
+       if (err && err.originalError && err.originalError.message) { 
           errorDetails = `Original Airtable Error: ${err.originalError.message} (Status: ${err.originalError.statusCode || 'N/A'}, Type: ${err.originalError.error || 'N/A'})`;
       } else if (err && err.error && err.message) { 
           errorDetails = `Airtable Error: ${err.type || err.error} - ${err.message} (Status: ${err.statusCode || 'N/A'})`;

@@ -52,8 +52,9 @@ const WebSocketManager = {
   handleSocketMessage(event) {
     const data = JSON.parse(event.data);
     switch (data.event || data.type) {
-      case "complete":
+      case "proxyCreated":
         UI.updateUIForSuccess(data);
+        console.log(`http://${data.proxyName}.${WebSocketManager.environment}/meet`)
         window.location.href = `http://${data.proxyName}.${WebSocketManager.environment}/meet`;
         break;
       case "progress":
