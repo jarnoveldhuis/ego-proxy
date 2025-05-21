@@ -591,9 +591,11 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
     context.submitToOptions = context.submitToOptions || [];
 
     if (siteId !== CT) { 
-        context.submitAsOptions = updateOptionsWithSubdomain(context.submitAsOptions, subdomain, guests);
+        context.submitAsOptions = updateOptionsWithSubdomain(context.submitAsOptions, guests);
         context.submitToOptions = updateOptionsWithSubdomain(context.submitToOptions, subdomain, guests);
     }
+
+    
 
     const publicProxyNames = await fetchPublicProxyNames(subdomain); 
     const yourProxyNames = await fetchYourProxyNames(subdomain);   
