@@ -114,20 +114,22 @@ app.get("/", async (req, res) => {
   }
 
   if (process.env.NODE_ENV === "production" && req.headers["x-forwarded-proto"] !== "https") {
-     protocol = "https"; 
+     protocol = "https";
   }
 
-  const url = protocol + "://" + req.get("host") + req.originalUrl;
+  // const url = protocol + "://" + req.get("host") + req.originalUrl; // This line doesn't seem to be used for the redirect logic below
 
-  if (subdomain && subdomain !== "www" && subdomain !== "ego-proxy" && !req.path.startsWith("/public") && !req.path.startsWith("/client")) { 
+  if (subdomain && subdomain !== "www" && subdomain !== "ego-proxy" && !req.path.startsWith("/public") && !req.path.startsWith("/client")) {
     try {
-      const proxy = await fetchProxies([subdomain]); 
+      const proxy = await fetchProxies([subdomain]);
       if (!proxy || proxy.length === 0) {
         console.error("No proxy data found for subdomain:", subdomain);
         return res.render("create", { proxyDomain });
       }
-      // Assuming siteId is the same as subdomain for direct proxy access
-      res.redirect(`${protocol}://${subdomain}.${req.get("host")}/meet`); 
+      // Corrected redirect URL construction:
+      // req.get("host") already contains the full hostname including the subdomain.
+      // No need to prepend `subdomain` again.
+      res.redirect(`${protocol}://${req.get("host")}/meet`);
     } catch (error) {
       console.error("Error fetching proxies for subdomain redirect:", error);
       res.render("create", { proxyDomain });
