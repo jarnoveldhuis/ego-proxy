@@ -4,19 +4,24 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
-  onAuthStateChanged as firebaseOnAuthStateChanged // Alias to avoid conflict if needed elsewhere
+  onAuthStateChanged as firebaseOnAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
 
 let currentUser = null;
 let idToken = null;
-let authStateInitialized = false; // Flag to indicate initial auth check is done
-const authStateChangeCallbacks = []; // Store callbacks
+let authStateInitialized = false; // True after the first onAuthStateChanged event
+const authStateChangeCallbacks = [];
+
+// Promise that resolves when the first auth state is known
+let authInitializationResolver;
+const authInitializationPromise = new Promise(resolve => {
+    authInitializationResolver = resolve;
+});
 
 async function updateToken(forceRefresh = false) {
     if (auth.currentUser) {
         try {
             idToken = await auth.currentUser.getIdToken(forceRefresh);
-            // console.log("auth.js: Token updated", idToken ? "Exists" : "Null");
         } catch (error) {
             idToken = null;
             console.error("auth.js: Error updating token:", error);
@@ -30,39 +35,48 @@ async function updateToken(forceRefresh = false) {
 firebaseOnAuthStateChanged(auth, async (user) => {
     console.log("auth.js: Firebase onAuthStateChanged triggered. User:", user ? user.uid : null);
     currentUser = user;
-    await updateToken(true); // Force refresh the token
-    authStateInitialized = true;
+    await updateToken(true); 
+
+    if (!authStateInitialized) {
+        authStateInitialized = true;
+        if (authInitializationResolver) {
+            authInitializationResolver(); // Resolve the promise
+            authInitializationResolver = null; 
+        }
+    }
 
     // Notify all subscribed callbacks
-    authStateChangeCallbacks.forEach(callback => callback(user, idToken));
-
-    // Dispatch a custom event as well, for broader use if needed
-    document.dispatchEvent(new CustomEvent('authStateChangedGlobal', {
-        detail: {
-            loggedIn: !!user,
-            user: user,
-            token: idToken
+    authStateChangeCallbacks.forEach(callback => {
+        try {
+            callback(currentUser, idToken);
+        } catch (e) {
+            console.error("auth.js: Error in an onAuthChanged callback:", e);
         }
+    });
+
+    document.dispatchEvent(new CustomEvent('authStateChangedGlobal', {
+        detail: { loggedIn: !!user, user: user, token: idToken }
     }));
 });
 
-// Exported functions
+// Export this function so other modules can wait for initialization
+export function ensureAuthInitialized() {
+    return authInitializationPromise;
+}
+
 export function getCurrentUser() {
     return currentUser;
 }
 
 export async function getIdTokenAsync(forceRefresh = false) {
     if (!auth.currentUser) {
-        // console.warn("auth.js: getIdTokenAsync called, but no user.");
-        idToken = null; // Clear cached token
+        idToken = null;
         return null;
     }
-    // If the cached token is null or forced, try to get a fresh one
     if (!idToken || forceRefresh) {
-        // console.log("auth.js: getIdTokenAsync attempting to refresh token.");
-        await updateToken(true); // updateToken will set the global idToken
+        await updateToken(true);
     }
-    return idToken; // Return the (potentially updated) cached token
+    return idToken;
 }
 
 export function handleGoogleLogin() {
@@ -75,7 +89,7 @@ export function handleGoogleLogin() {
         })
         .catch((error) => {
             console.error("auth.js: Google login error:", error.code, error.message);
-            throw error; // Re-throw for the caller to handle
+            throw error; 
         });
 }
 
@@ -87,11 +101,10 @@ export function handleLogout() {
         })
         .catch((error) => {
             console.error("auth.js: Logout error:", error);
-            throw error; // Re-throw
+            throw error;
         });
 }
 
-// Function for other modules (like chat.js) to subscribe to auth changes
 export function onAuthChanged(callback) {
     if (typeof callback !== 'function') {
         console.error("auth.js: Invalid callback provided to onAuthChanged");
@@ -100,10 +113,18 @@ export function onAuthChanged(callback) {
     
     authStateChangeCallbacks.push(callback);
     
-    // If auth state is already initialized, call back immediately
+    // If auth state is already initialized, call back immediately with the current state.
     if (authStateInitialized) {
-        // console.log("auth.js: Auth state already initialized, calling callback immediately.");
-        callback(currentUser, idToken);
+        console.log("auth.js: Auth state already initialized, calling onAuthChanged callback immediately for new subscriber with user:", currentUser ? currentUser.uid : null);
+        // Use queueMicrotask to allow the calling script to finish its current execution block
+        // before the callback is invoked, preventing potential re-entrancy issues.
+        queueMicrotask(() => {
+            try {
+                callback(currentUser, idToken);
+            } catch (e) {
+                console.error("auth.js: Error in immediate onAuthChanged callback (for initialized state):", e);
+            }
+        });
     }
 
     // Return an unsubscribe function
@@ -115,6 +136,4 @@ export function onAuthChanged(callback) {
     };
 }
 
-// Initial attempt to update token on script load
-// updateToken(); // onAuthStateChanged will handle the initial state
-console.log("auth.js: Loaded. Waiting for Firebase onAuthStateChanged.");
+console.log("auth.js: Loaded. Firebase onAuthStateChanged listener is active.");
