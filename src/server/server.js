@@ -1,22 +1,15 @@
 // 1. IMPORTS AND CONFIGURATIONS
-
-// Core modules
-const path = require("path");
-const http = require("http");
-
-// Third-party modules
 const express = require("express");
 const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
 const WebSocket = require("ws");
-// axios is used by api.js, not directly needed here unless for other purposes
 const nodemailer = require("nodemailer");
 const rateLimit = require("express-rate-limit");
-const Airtable = require("airtable");
-
-// Import from services/api.js
+const { db, auth: adminAuth } = require("./services/firebase"); 
 const { openai, elevenLabs, ELEVENLABS_ENDPOINTS, uploadBase64ToFirebase } = require("./services/api");
 require("dotenv").config();
+const path = require("path");
+const http = require("http");
 
 // Constants
 const app = express();
@@ -24,42 +17,33 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const port = process.env.PORT || 3001;
 
-const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
 const emailCredentials = process.env.EMAIL_CREDENTIALS;
 let emailUser, emailPass;
 if (emailCredentials) {
   [emailUser, emailPass] = emailCredentials.split(":");
 } else {
   console.error("EMAIL_CREDENTIALS not set in .env file. Email functionality will fail.");
-  // Provide default or handle error appropriately
   emailUser = "defaultuser@example.com";
   emailPass = "defaultpass";
 }
 
-
-// VARIABLES
 const clients = {};
-const airtableBaseId = process.env.AIRTABLE_BASE_ID || "appGJeYbeaiWUaxhe"; // Use env var, provide default
-const base = new Airtable({ apiKey: AIRTABLE_TOKEN }).base(airtableBaseId);
 const CT = process.env.CT;
 let globalDataStore = {};
-let gptModel = process.env.NODE_ENV === "development" ? "gpt-4o" : "gpt-4o"; // Set model based on env
+let gptModel = process.env.NODE_ENV === "development" ? "gpt-4o" : "gpt-4o";
 let proxyList = [];
 
-// MIDDLEWARE
-// Increase limits for base64 image uploads and URL encoded data
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
-app.use(express.static(path.join(__dirname, "public"))); // If you have a 'public' folder in 'server'
+app.use(express.static(path.join(__dirname, "public")));
 app.set("view engine", "ejs");
-app.set("views", path.join(__dirname, "../views")); // Assuming 'views' is one level up from 'server'
-app.use(express.static(path.join(__dirname, "../client"))); // Assuming 'client' is one level up from 'server'
+app.set("views", path.join(__dirname, "../views"));
+app.use(express.static(path.join(__dirname, "../client")));
 
-const TIMEOUT_DURATION = 30000; // 30 seconds, adjust as needed
-
+const TIMEOUT_DURATION = 30000;
 app.use((req, res, next) => {
   const timeout = setTimeout(() => {
-    if (!res.headersSent) { // Check if headers already sent
+    if (!res.headersSent) {
       console.error(`Request timed out for ${req.method} ${req.originalUrl}`);
       res.status(503).render("error", {
         message: "The request timed out. Please try again later.",
@@ -67,476 +51,618 @@ app.use((req, res, next) => {
       });
     }
   }, TIMEOUT_DURATION);
-
   res.on("finish", () => clearTimeout(timeout));
-  res.on("close", () => clearTimeout(timeout)); // Handle abrupt client disconnects
-
+  res.on("close", () => clearTimeout(timeout));
   next();
 });
 
-// Rate Limiter (apply to specific routes if needed, or globally)
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Max requests from an IP in windowMs. Adjust as needed.
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
 });
-// app.use(apiLimiter); // Apply globally or to specific routes
 
-// Email Transporter
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: { user: emailUser, pass: emailPass },
 });
 
-// Airtable Configuration
-Airtable.configure({
-  endpointUrl: "https://api.airtable.com",
-  apiKey: AIRTABLE_TOKEN,
-});
-
-// Global Variables (scoped where possible, avoid if not necessary)
-let currentSpeaker = ""; // Consider if this needs to be global or request-specific
-let voice = ""; // Consider if this needs to be global or request-specific
+let currentSpeaker = "";
+let voice = "";
 const transcriptThreshold = 1500;
 
+
+// Middleware to verify Firebase ID token
+async function verifyFirebaseToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.warn("Auth header missing or not Bearer for:", req.path);
+    // For GET requests that might be accessed directly in browser (like /:siteId),
+    // we don't want to block, but req.user will be undefined.
+    // For API routes, we might want to be stricter.
+    if (req.method !== 'GET') {
+        return res.status(401).json({ message: 'Unauthorized: No token provided.' });
+    }
+    return next();
+  }
+
+  const idToken = authHeader.split('Bearer ')[1];
+
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(idToken);
+    req.user = decodedToken; // Add user info to request
+    console.log(`Token verified for user: ${req.user.uid} for path ${req.path}`);
+    next(); 
+  } catch (error) {
+    console.error('Error verifying Firebase ID token for path ' + req.path + ':', error.message);
+    // Similar to above, for GET allow through, for others block.
+    if (req.method !== 'GET') {
+        return res.status(403).json({ message: 'Unauthorized: Invalid or expired token.' });
+    }
+    next();
+  }
+}
 // 2. ROUTES AND HANDLERS
 
-// Home Route (from user's file)
-app.get("/", async (req, res) => {
-  const proxyDomain = req.get("host");
-  const parts = req.hostname.split(".");
-  const subdomain = parts.length > 1 ? parts[0] : "";
-  let protocol = req.protocol;
+// Home Route (keep existing)
+app.get("/", verifyFirebaseToken, async (req, res) => {
+    const fullRequestHost = req.get("host");
+    const currentHostname = req.hostname;
+    const parts = currentHostname.split(".");
+    const accessedSubdomain = (parts.length > 1 && parts[0].toLowerCase() !== "www" && parts[0].toLowerCase() !== "ego-proxy") ? parts[0] : null;
 
-  if (req.headers["x-forwarded-proto"]) {
-    protocol = req.headers["x-forwarded-proto"].split(",")[0];
-  }
-
-  if (process.env.NODE_ENV === "production" && req.headers["x-forwarded-proto"] !== "https") {
-     protocol = "https";
-  }
-
-  // const url = protocol + "://" + req.get("host") + req.originalUrl; // This line doesn't seem to be used for the redirect logic below
-
-  if (subdomain && subdomain !== "www" && subdomain !== "ego-proxy" && !req.path.startsWith("/public") && !req.path.startsWith("/client")) {
-    try {
-      const proxy = await fetchProxies([subdomain]);
-      if (!proxy || proxy.length === 0) {
-        console.error("No proxy data found for subdomain:", subdomain);
-        return res.render("create", { proxyDomain });
-      }
-      // Corrected redirect URL construction:
-      // req.get("host") already contains the full hostname including the subdomain.
-      // No need to prepend `subdomain` again.
-      res.redirect(`${protocol}://${req.get("host")}/meet`);
-    } catch (error) {
-      console.error("Error fetching proxies for subdomain redirect:", error);
-      res.render("create", { proxyDomain });
+    let protocol = req.protocol;
+    if (req.headers["x-forwarded-proto"]) {
+        protocol = req.headers["x-forwarded-proto"].split(",")[0];
     }
-  } else {
-    res.render("create", { proxyDomain });
-  }
+    if (process.env.NODE_ENV === "production" && protocol !== "https") {
+        protocol = "https";
+    }
+
+    if (accessedSubdomain && !req.path.startsWith("/public") && !req.path.startsWith("/client")) {
+        // Existing logic to redirect if a specific proxy subdomain is accessed
+        try {
+            console.log(`Home route: Proxy subdomain '${accessedSubdomain}' detected. Attempting redirect.`);
+            const proxiesData = await fetchProxies([accessedSubdomain]);
+            if (!proxiesData || proxiesData.length === 0) {
+                console.warn(`No proxy data found for subdomain: ${accessedSubdomain}. Rendering create page as fallback.`);
+                return res.render("create", { proxyDomain: fullRequestHost, user: req.user });
+            }
+            const proxyDetails = proxiesData[0];
+            const proxyTargetName = proxyDetails.Proxy;
+            let redirectBase = fullRequestHost;
+            if (fullRequestHost.startsWith(accessedSubdomain + '.')) {
+                redirectBase = fullRequestHost.substring(accessedSubdomain.length + 1);
+            }
+            return res.redirect(`${protocol}://${proxyTargetName}.${redirectBase}/meet`);
+        } catch (error) {
+            console.error("Error during subdomain redirect:", error);
+            return res.render("create", { proxyDomain: fullRequestHost, user: req.user });
+        }
+    } else {
+        // No specific proxy subdomain, or it's a main domain.
+        // ALWAYS render a base page (e.g., 'create.ejs' or a new 'home.ejs').
+        // Client-side JavaScript will determine if it should show "create" UI or "dashboard" UI.
+        // req.user might be set here if the client *somehow* sent a token on this initial request
+        // (e.g. if this page was reloaded after login from an SPA context, but not typical for direct nav).
+        console.log("Home route: Rendering base page. Client-side will determine UI (create/dashboard).");
+        res.render("create", { // Or a more generic "home.ejs" if you prefer
+            proxyDomain: fullRequestHost,
+            user: req.user // Pass user; client-side script can also check auth state
+        });
+    }
 });
 
-// SiteId Route (from user's file)
-app.get("/:siteId", async (req, res) => {
-  const siteId = req.params.siteId;
 
-  if (!siteId || ["undefined", "favicon.ico", "client", "public"].includes(siteId.trim())) {
-    console.log("Invalid siteId or static asset request in /:siteId");
-    return res.status(404).send("Not found");
+app.get("/dashboard", verifyFirebaseToken, async (req, res) => {
+    const fullRequestHost = req.get("host");
+    let protocol = req.protocol;
+    if (req.headers["x-forwarded-proto"]) {
+        protocol = req.headers["x-forwarded-proto"].split(",")[0];
+    }
+    if (process.env.NODE_ENV === "production" && protocol !== "https") {
+        protocol = "https";
+    }
+
+    if (!req.user) {
+        // If verifyFirebaseToken somehow didn't catch this (e.g., if modified)
+        // or if you want to redirect non-logged-in users trying to access /dashboard directly
+        return res.redirect('/'); // Or to a login page
+    }
+
+    // User is logged in, fetch and render their dashboard
+    try {
+        const userId = req.user.uid;
+        const snapshot = await db.collection('proxies').where('userId', '==', userId).get();
+        const userProxies = [];
+
+        const hostAndPort = fullRequestHost.split(':');
+        const mainHostnameForLinks = hostAndPort[0];
+        const mainPortForLinks = hostAndPort.length > 1 ? `:${hostAndPort[1]}` : '';
+
+        let baseDomainForLinks;
+        const mainHostnameParts = mainHostnameForLinks.split('.');
+        if (mainHostnameForLinks === 'localhost' || (mainHostnameParts.length > 1 && mainHostnameParts[mainHostnameParts.length -1] === 'localhost')) {
+            baseDomainForLinks = 'localhost';
+        } else if (mainHostnameParts.length > 1 && mainHostnameParts[0].toLowerCase() === 'www') {
+            baseDomainForLinks = mainHostnameParts.slice(1).join('.');
+        } else {
+            baseDomainForLinks = mainHostnameForLinks;
+        }
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const proxySub = data.Proxy.toLowerCase();
+            userProxies.push({
+                id: doc.id,
+                name: data.OriginalProxyName || data.Proxy,
+                imageUrl: data.friendly && data.friendly.length > 0 ? data.friendly[0].url : (data.joy && data.joy.length > 0 ? data.joy[0].url : '/img/logo.png'),
+                proxySubdomain: proxySub,
+                meetUrl: `${protocol}://${proxySub}.${baseDomainForLinks}${mainPortForLinks}/meet`
+            });
+        });
+
+        console.log(`User ${userId} is logged in. Rendering dashboard via /dashboard route with ${userProxies.length} proxies.`);
+        res.render("dashboard", { // Assumes you have dashboard.ejs
+            user: req.user,
+            proxies: userProxies,
+            proxyDomain: fullRequestHost
+        });
+
+    } catch (error) {
+        console.error("Error fetching user proxies for /dashboard route:", error);
+        res.status(500).render("error", { user: req.user, message: "Error loading your dashboard.", error });
+    }
+});
+
+// SiteId Route - MODIFIED
+// In src/server/server.js
+
+app.get("/:siteId", verifyFirebaseToken, async (req, res) => {
+  const siteIdParam = req.params.siteId; // Use a different name to avoid conflict with 'siteId' key
+
+  if (!siteIdParam || ["undefined", "favicon.ico", "client", "public"].includes(siteIdParam.trim())) {
+      console.log("Invalid siteId or static asset request in /:siteId");
+      return res.status(404).send("Not found");
   }
 
   const parts = req.hostname.split(".");
-  const subdomain =
-    parts.length > 1 && parts[0] !== "www" && parts[0] !== "ego-proxy" ? parts[0] : "";
+  const subdomainFromHost = parts.length > 1 && parts[0] !== "www" && parts[0] !== "ego-proxy" ? parts[0] : "";
+  
+  // Determine the current proxy's identifier (lowercase) - prioritize host, fallback to path
+  const currentProxyIdentifier = (subdomainFromHost || siteIdParam).toLowerCase();
 
-  if (CT === siteId) { 
-    gptModel = "gpt-4"; 
+  console.log(`Accessing /:siteId - Path: ${siteIdParam}, Subdomain: ${subdomainFromHost}, Identifier: ${currentProxyIdentifier}`);
+
+  if (CT === siteIdParam) {
+      gptModel = "gpt-4";
   }
 
   console.log(`GPT Model for /:siteId route: ${gptModel}`);
 
   const guests = req.query.guest
-    ? decodeURIComponent(req.query.guest).split(",")
-    : [];
+      ? decodeURIComponent(req.query.guest).split(",")
+      : [];
 
   try {
-    const data = await fetchContextAndProxies(siteId, subdomain, guests);
-    if (!data) {
-      console.log(`No matching records found for siteId: ${siteId}, subdomain: ${subdomain}`);
-      return res.render("create", { proxyDomain: req.get("host") });
-    }
+      // Fetch using siteIdParam (like 'meet') and currentProxyIdentifier
+      const data = await fetchContextAndProxies(siteIdParam, currentProxyIdentifier, guests);
+      if (!data) {
+          console.log(`No matching records found for siteId: ${siteIdParam}, subdomain: ${currentProxyIdentifier}`);
+          return res.render("create", { proxyDomain: req.get("host") });
+      }
 
-    data.transcriptThreshold = transcriptThreshold;
-    data.hasShareParam = req.query.hasOwnProperty("share");
+      data.transcriptThreshold = transcriptThreshold;
+      data.hasShareParam = req.query.hasOwnProperty("share");
 
-    if (typeof data.proxies !== 'object' || data.proxies === null) {
-        console.error("data.proxies is not an object:", data.proxies);
-        data.proxies = {}; 
-    }
-    
-    const lowerCaseProxies = Object.keys(data.proxies).reduce((result, key) => {
-      result[key.toLowerCase()] = data.proxies[key];
-      return result;
-    }, {});
-
-    updateContextMessages(siteId, subdomain, lowerCaseProxies, data); 
-    cleanDataForPublic(data); 
-    res.render("chat", data);
-  } catch (err) {
-    console.error(`Error in /:siteId route for ${siteId}:`, err.message);
-    res.render("create", { proxyDomain: req.get("host") }); 
-  }
-});
-
-
-// Proxy Update Route (from user's file)
-app.post("/update-proxy", apiLimiter, async (req, res) => {
-  const parts = req.hostname.split(".");
-  const subdomain = parts.length > 1 && parts[0] !== "www" && parts[0] !== "ego-proxy" ? parts[0] : "";
-  const { contentId, content } = req.body;
-
-  if (!subdomain) {
-    return res.status(400).json({ error: "Subdomain could not be determined or is invalid." });
-  }
-  if (!contentId || !content) {
-    return res.status(400).json({ error: "Missing contentId or content in request body."})
-  }
-
-  try {
-    const proxyData = await findProxyDataByName(subdomain); 
-    if (proxyData && proxyData.id) {
-      const updatedRecord = await base("Proxies").update(proxyData.id, {
-        [contentId]: content,
-      });
-      res.json({
-        success: true,
-        message: "Record updated successfully",
-        updatedRecord,
-      });
-    } else {
-      throw new Error(`No matching row found for proxyName: ${subdomain}`);
-    }
-  } catch (error) {
-    console.error("Error updating Airtable in /update-proxy:", error);
-    res
-      .status(500)
-      .json({ error: `Failed to update due to error: ${error.message}` });
-  }
-});
-
-
-// Chat Route (from user's file)
-app.post("/ask/", apiLimiter, async (req, res) => {
-  const {
-    question,
-    submitAs,
-    submitTo,
-    transcript,
-    siteId,
-    training,
-    tutorial,
-  } = req.body;
-
-  let routeTimeout; 
-
-  try {
-    routeTimeout = setTimeout(() => { 
-        if (!res.headersSent) {
-          console.error("Timeout in /ask route before response sent.");
-          return res.status(503).json({
-            error: "Request timed out. The server took too long to process your request.",
-          });
-        }
-      }, 28000); 
-
-    if (!question || !submitTo || !transcript || !siteId) {
-      clearTimeout(routeTimeout);
-      return res.status(400).send({ error: "Missing required fields" });
-    }
-
-    const dataForSiteId = globalDataStore[siteId];
-    if (!dataForSiteId) {
-      clearTimeout(routeTimeout);
-      return res.status(400).send({ error: `Data not found for siteId: ${siteId}. Please refresh or check site ID.` });
-    }
-
-    const emotions = "Angry, Confused, Laugh, Sad, Fear, Disgust, Embarrassed"; 
-    const userMessage = `Add a single line of dialogue to this script to advance the plot. Never add more than one line of dialogue. Each line should express one of the following emotions: ${emotions}.\nBegin your response with "${submitTo}:" and include the relevant emotions in parentheses at the very end of your response. For example:\n${submitTo}: I'm feeling great today! (Joy)\nDo not use any other expressions than the ones listed and do not use any of these emotions twice in a row. Never change the casing of the name. `;
-
-    const proxies = dataForSiteId.proxies || {};
-    const context = dataForSiteId.context || {};
-    currentSpeaker = submitTo; 
-    const currentProxy = proxies[currentSpeaker] || {};
-    
-    if (ELEVENLABS_ENDPOINTS[currentSpeaker]) {
-      voice = ELEVENLABS_ENDPOINTS[currentSpeaker];
-    } else if (currentProxy.genderIdentity && ELEVENLABS_ENDPOINTS[currentProxy.genderIdentity]) {
-      voice = ELEVENLABS_ENDPOINTS[currentProxy.genderIdentity];
-    } else {
-      voice = ELEVENLABS_ENDPOINTS.GBv7mTt0atIp3Br8iCZE || ELEVENLABS_ENDPOINTS.Male; 
-    }
-    console.log(`Voice selected for ${currentSpeaker}: ${voice}`);
-
-
-    if (transcript.length > transcriptThreshold && (training || tutorial)) {
-      console.log("Transcript summary conditions met. Summarizing...");
-      const transcriptSummary = await summarizeTranscript( 
-        transcript,
-        siteId, 
-        currentSpeaker,
-        proxies[currentSpeaker]?.[siteId] 
-      );
-      console.log("Transcript summarized successfully: ", transcriptSummary);
-
-      let proxyDataToUpdate = await findProxyDataByName(currentSpeaker);
-
-      if (proxyDataToUpdate && proxyDataToUpdate.id) {
-        await base("Proxies").update(proxyDataToUpdate.id, {
-          [siteId]: transcriptSummary, 
-        });
-        if(proxies[currentSpeaker]) proxies[currentSpeaker][siteId] = transcriptSummary;
-
-      } else {
-        console.error(`No matching Airtable row found for proxyName: ${currentSpeaker} to update summary.`);
+      if (typeof data.proxies !== 'object' || data.proxies === null) {
+          console.error("data.proxies is not an object:", data.proxies);
+          data.proxies = {};
       }
       
-      clearTimeout(routeTimeout);
-      return res.send({
-        personalityUpdated: true,
-        transcriptSummary: transcriptSummary,
-        answer: `${submitTo}: My personality profile has been updated based on our conversation! (Friendly)`,
-      });
+      // Find the main proxy using the lowercase identifier
+      const mainProxyData = data.proxies[currentProxyIdentifier];
 
-    } else { 
-      const contextMessage = context.message || "Default general context message";
-      const proxyPersonalProfile = currentProxy[siteId] || currentProxy.message || "I am a helpful assistant.";
+      data.siteId = siteIdParam; 
+      data.proxyDisplayName = mainProxyData ? (mainProxyData.OriginalProxyName || mainProxyData.Proxy) : currentProxyIdentifier;
+      data.currentProxySubdomain = currentProxyIdentifier; 
+      data.proxyOwnerId = mainProxyData ? mainProxyData.userId : null;
+      data.loggedInUserId = req.user ? req.user.uid : null;
 
-      const progress = Math.floor((transcript.length / transcriptThreshold) * 100);
-      let storyProgress = `\nThe story is now ${progress}% complete. Use the transcript thus far and Joseph Campbells' Hero's journey framework to inform what happens next.\n`;
+      const lowerCaseProxies = Object.keys(data.proxies).reduce((result, key) => {
+          result[key.toLowerCase()] = data.proxies[key];
+          return result;
+      }, {});
+
+      updateContextMessages(siteIdParam, currentProxyIdentifier, lowerCaseProxies, data);
       
-      let charactersInScene = proxyList.filter(proxy => proxy && proxy.toLowerCase() !== "you" && proxy.toLowerCase() !== "interviewer");
-
-      let systemMessage = `You are a screenwriter writing the next line of dialogue for ${currentSpeaker}. Your personality is: "${proxyPersonalProfile}". The overall context is: "${contextMessage}". Characters in the scene: ${charactersInScene.join(", ")}. Their personalities are: ${Object.entries(proxies)
-        .filter(([name]) => charactersInScene.includes(name))
-        .map(([name, details]) => `${name}: ${details[siteId] || details.message || 'Default personality'}`)
-        .join("\n")}`;
-      
-      const payload = createPayload( 
-        systemMessage,
-        transcript + storyProgress + userMessage
-      );
-      // console.log("Response Payload for /ask:", payload.messages[0].content, payload.messages[1].content);
-      const assistantMessage = await getAssistantResponse(payload); 
-      clearTimeout(routeTimeout);
-      res.send({ answer: assistantMessage });
-    }
-  } catch (error) {
-    if(routeTimeout) clearTimeout(routeTimeout); 
-    console.error("Error in /ask route:", error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while processing your /ask request." });
+      res.render("chat", data);
+  } catch (err) {
+      console.error(`Error in /:siteId route for ${siteIdParam} (identifier: ${currentProxyIdentifier}):`, err.message, err.stack);
+      res.render("create", { proxyDomain: req.get("host") });
   }
 });
 
+// NEW API Endpoint: /api/my-proxies
+app.get("/api/my-proxies", verifyFirebaseToken, async (req, res) => {
+    if (!req.user) { // Strict check: user must be logged in
+        return res.status(401).json({ success: false, error: "Unauthorized: User not logged in." });
+    }
+    try {
+        const userId = req.user.uid;
+        const snapshot = await db.collection('proxies').where('userId', '==', userId).get();
+        const userProxies = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            userProxies.push({
+                id: doc.id,
+                name: data.OriginalProxyName || data.Proxy,
+                imageUrl: data.friendly && data.friendly.length > 0 ? data.friendly[0].url : (data.joy && data.joy.length > 0 ? data.joy[0].url : '/img/logo.png'),
+                proxySubdomain: data.Proxy // The lowercase name used as subdomain
+            });
+        });
+        res.json({ success: true, proxies: userProxies });
+    } catch (error) {
+        console.error("Error fetching user proxies:", error);
+        res.status(500).json({ success: false, error: "Failed to fetch proxies." });
+    }
+});
 
-// Feedback Route (from user's file)
+
+// Proxy Update Route - MODIFIED
+app.post("/update-proxy", apiLimiter, verifyFirebaseToken, async (req, res) => {
+    if (!req.user) { // Strict check: user must be logged in
+        return res.status(401).json({ error: "Unauthorized: User not logged in." });
+    }
+
+    const parts = req.hostname.split(".");
+    const subdomain = parts.length > 1 && parts[0] !== "www" && parts[0] !== "ego-proxy" ? parts[0] : "";
+    const { contentId, content } = req.body;
+    const loggedInUserId = req.user.uid; 
+
+    if (!subdomain) {
+        return res.status(400).json({ error: "Subdomain could not be determined or is invalid." });
+    }
+    if (contentId === undefined || content === undefined) { // Check for undefined explicitly
+        return res.status(400).json({ error: "Missing contentId or content in request body." })
+    }
+
+    try {
+        const proxyData = await findProxyDataByName(subdomain); 
+        if (proxyData && proxyData.id) { 
+            
+            if (proxyData.userId !== loggedInUserId) {
+                console.warn(`Permission Denied: User ${loggedInUserId} tried to edit proxy ${subdomain} owned by ${proxyData.userId}`);
+                return res.status(403).json({ error: "Permission denied: You do not own this proxy." });
+            }
+
+            const proxyRef = db.collection('proxies').doc(proxyData.id); 
+            await proxyRef.update({
+                [contentId]: content,
+            });
+            res.json({
+                success: true,
+                message: "Record updated successfully",
+            });
+        } else {
+            // If proxyData is null, it means findProxyDataByName didn't find it.
+            console.error(`No matching doc found for proxyName: ${subdomain} in /update-proxy`);
+            return res.status(404).json({ error: `Proxy '${subdomain}' not found.` });
+        }
+    } catch (error) {
+        console.error("Error updating Firestore in /update-proxy:", error);
+        res.status(500).json({ error: `Failed to update due to error: ${error.message}` });
+    }
+});
+
+// Chat Route (keep existing, but ensure it doesn't bypass ownership for profile updates if those happen here)
+app.post("/ask/", apiLimiter, verifyFirebaseToken, async (req, res) => {
+    const {
+        question,
+        submitAs,
+        submitTo,
+        transcript,
+        siteId,
+        training,
+        tutorial,
+    } = req.body;
+    const loggedInUserId = req.user ? req.user.uid : null;
+
+    let routeTimeout;
+
+    try {
+        routeTimeout = setTimeout(() => {
+            if (!res.headersSent) {
+                console.error("Timeout in /ask route before response sent.");
+                return res.status(503).json({
+                    error: "Request timed out. The server took too long to process your request.",
+                });
+            }
+        }, 28000);
+
+        if (!question || !submitTo || !transcript || !siteId) {
+            clearTimeout(routeTimeout);
+            return res.status(400).send({ error: "Missing required fields" });
+        }
+
+        const dataForSiteId = globalDataStore[siteId];
+        if (!dataForSiteId) {
+            clearTimeout(routeTimeout);
+            return res.status(400).send({ error: `Data not found for siteId: ${siteId}. Please refresh or check site ID.` });
+        }
+
+        const emotions = "Angry, Confused, Laugh, Sad, Fear, Disgust, Embarrassed";
+        const userMessage = `Add a single line of dialogue to this script to advance the plot. Never add more than one line of dialogue. Each line should express one of the following emotions: ${emotions}.\nBegin your response with "${submitTo}:" and include the relevant emotions in parentheses at the very end of your response. For example:\n${submitTo}: I'm feeling great today! (Joy)\nDo not use any other expressions than the ones listed and do not use any of these emotions twice in a row. Never change the casing of the name. `;
+
+        const proxies = dataForSiteId.proxies || {};
+        const context = dataForSiteId.context || {};
+        currentSpeaker = submitTo;
+        const currentProxy = proxies[currentSpeaker.toLowerCase()] || {}; // Ensure lowercase access
+
+        if (ELEVENLABS_ENDPOINTS[currentSpeaker]) {
+            voice = ELEVENLABS_ENDPOINTS[currentSpeaker];
+        } else if (currentProxy.genderIdentity && ELEVENLABS_ENDPOINTS[currentProxy.genderIdentity]) {
+            voice = ELEVENLABS_ENDPOINTS[currentProxy.genderIdentity];
+        } else {
+            voice = ELEVENLABS_ENDPOINTS.GBv7mTt0atIp3Br8iCZE || ELEVENLABS_ENDPOINTS.Male;
+        }
+        console.log(`Voice selected for ${currentSpeaker}: ${voice}`);
+
+        if (transcript.length > transcriptThreshold && (training || tutorial)) {
+            console.log("Transcript summary conditions met. Summarizing...");
+            
+            const proxyDataToUpdate = await findProxyDataByName(currentSpeaker);
+            if (proxyDataToUpdate && proxyDataToUpdate.userId !== loggedInUserId && loggedInUserId !== null) {
+                 clearTimeout(routeTimeout);
+                 console.warn(`Permission Denied: User ${loggedInUserId} tried to train proxy ${currentSpeaker} owned by ${proxyDataToUpdate.userId}`);
+                 return res.status(403).json({ error: "Permission denied: You cannot train a proxy you do not own." });
+            }
+
+
+            const transcriptSummary = await summarizeTranscript(
+                transcript,
+                siteId,
+                currentSpeaker,
+                proxies[currentSpeaker.toLowerCase()]?.[siteId]
+            );
+            console.log("Transcript summarized successfully: ", transcriptSummary);
+
+            if (proxyDataToUpdate && proxyDataToUpdate.id) { 
+                const proxyRef = db.collection('proxies').doc(proxyDataToUpdate.id); 
+                await proxyRef.update({
+                    [siteId]: transcriptSummary, // e.g., 'meet': 'summary text'
+                });
+                if (proxies[currentSpeaker.toLowerCase()]) proxies[currentSpeaker.toLowerCase()][siteId] = transcriptSummary;
+            } else {
+                console.error(`No matching Firestore doc found for proxyName: ${currentSpeaker} to update summary.`);
+            }
+
+            clearTimeout(routeTimeout);
+            return res.send({
+                personalityUpdated: true,
+                transcriptSummary: transcriptSummary,
+                answer: `${submitTo}: My personality profile has been updated based on our conversation! (Friendly)`,
+            });
+
+        } else {
+            const contextMessage = context.message || "Default general context message";
+            const proxyPersonalProfile = currentProxy[siteId] || currentProxy.message || "I am a helpful assistant.";
+
+            const progress = Math.floor((transcript.length / transcriptThreshold) * 100);
+            let storyProgress = `\nThe story is now ${progress}% complete. Use the transcript thus far and Joseph Campbells' Hero's journey framework to inform what happens next.\n`;
+
+            let charactersInScene = proxyList.filter(proxy => proxy && proxy.toLowerCase() !== "you" && proxy.toLowerCase() !== "interviewer");
+
+            let systemMessage = `You are a screenwriter writing the next line of dialogue for ${currentSpeaker}. Your personality is: "${proxyPersonalProfile}". The overall context is: "${contextMessage}". Characters in the scene: ${charactersInScene.join(", ")}. Their personalities are: ${Object.entries(proxies)
+                .filter(([name]) => charactersInScene.includes(name))
+                .map(([name, details]) => `${name}: ${details[siteId] || details.message || 'Default personality'}`)
+                .join("\n")}`;
+
+            const payload = createPayload(
+                systemMessage,
+                transcript + storyProgress + userMessage
+            );
+            const assistantMessage = await getAssistantResponse(payload);
+            clearTimeout(routeTimeout);
+            res.send({ answer: assistantMessage });
+        }
+    } catch (error) {
+        if (routeTimeout) clearTimeout(routeTimeout);
+        console.error("Error in /ask route:", error);
+        res.status(500).json({ error: "An error occurred while processing your /ask request." });
+    }
+});
+
+
+// Feedback Route (keep existing)
 app.post("/send-feedback", apiLimiter, (req, res) => {
-  const { feedback } = req.body;
-  if (!feedback) return res.status(400).json({ message: "Feedback content is missing." });
+    const { feedback } = req.body;
+    if (!feedback) return res.status(400).json({ message: "Feedback content is missing." });
 
-  const mailOptions = {
-    from: `"Ego-Proxy Feedback" <${emailUser}>`, 
-    to: emailUser, 
-    subject: "Ego-Proxy Feedback Received",
-    text: `Feedback: ${feedback} \n\nSent from host: ${req.get("host")}`,
-  };
+    const mailOptions = {
+        from: `"Ego-Proxy Feedback" <${emailUser}>`,
+        to: emailUser,
+        subject: "Ego-Proxy Feedback Received",
+        text: `Feedback: ${feedback} \n\nSent from host: ${req.get("host")}`,
+    };
 
-  transporter.sendMail(mailOptions, function (error, info) {
-    if (error) {
-      console.error("Error sending feedback email:", error);
-      res
-        .status(500)
-        .json({ message: "Error sending feedback email", error: error.message });
-    } else {
-      console.log("Feedback email sent: " + info.response);
-      res.status(200).json({ message: "Feedback sent successfully" });
-    }
-  });
+    transporter.sendMail(mailOptions, function (error, info) {
+        if (error) {
+            console.error("Error sending feedback email:", error);
+            res.status(500).json({ message: "Error sending feedback email", error: error.message });
+        } else {
+            console.log("Feedback email sent: " + info.response);
+            res.status(200).json({ message: "Feedback sent successfully" });
+        }
+    });
 });
 
-
-// Voice Synthesis Route (from user's file)
+// Voice Synthesis Route (keep existing)
 app.post("/synthesize", apiLimiter, async (req, res) => {
-  try {
-    const { text } = req.body;
-    if (!text) {
-      return res
-        .status(400)
-        .send({ error: "Missing text field in request body" });
+    try {
+        const { text } = req.body;
+        if (!text) {
+            return res.status(400).send({ error: "Missing text field in request body" });
+        }
+        console.log("Synthesizing speech for:", text.substring(0, 50) + "...");
+        console.log("Using voice ID for synthesis:", voice);
+        const audioBuffer = await elevenLabs.synthesizeSpeech(text, voice);
+        res.set("Content-Type", "audio/mpeg");
+        res.send(audioBuffer);
+    } catch (error) {
+        console.error("Error in /synthesize route:", error.message);
+        res.status(500).send({ error: "Failed to synthesize speech with ElevenLabs." });
     }
-
-    console.log("Synthesizing speech for:", text.substring(0, 50) + "...");
-    console.log("Using voice ID for synthesis:", voice); 
-
-    const audioBuffer = await elevenLabs.synthesizeSpeech(text, voice);
-    res.set("Content-Type", "audio/mpeg");
-    res.send(audioBuffer);
-  } catch (error) {
-    console.error("Error in /synthesize route:", error.message);
-    res.status(500).send({ error: "Failed to synthesize speech with ElevenLabs." });
-  }
 });
+
 
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
     storage: storage,
-    limits: { fileSize: 20 * 1024 * 1024 } 
+    limits: { fileSize: 20 * 1024 * 1024 } // 20MB limit
 });
 
-
+// Create Proxy Route (keep existing, already associates userId via WebSocket)
 app.post("/create-proxy", upload.single("file"), async (req, res) => {
   const { proxyName, genderIdentity, proxyEmail, clientId } = req.body; 
-  const ethnicity =
-    req.body.ethnicity !== "Other"
-      ? req.body.ethnicity
-      : req.body.otherEthnicity;
+  const ethnicity = req.body.ethnicity !== "Other" ? req.body.ethnicity : req.body.otherEthnicity;
+  let routeHttpTimeout;
 
-  let routeHttpTimeout; 
-  
   try {
-    routeHttpTimeout = setTimeout(() => { 
+      routeHttpTimeout = setTimeout(() => { 
         if (!res.headersSent) {
-          console.error("Timeout in /create-proxy before initial response.");
-          return res.status(503).json({
-            message: "Request timed out waiting for initial processing acknowledgement.",
+            console.error("Timeout in /create-proxy before response sent.");
+            res.status(503).json({ message: "Request timed out."});
+        }
+       }, 28000);
+
+      if (!req.file || !proxyName || !genderIdentity || !ethnicity || !clientId) { 
+          clearTimeout(routeHttpTimeout);
+          return res.status(400).json({ message: "Missing required fields (including clientId)." });
+      }
+
+      const ws = clients[clientId] ? clients[clientId].ws : null; 
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+          clearTimeout(routeHttpTimeout);
+          console.log(`WebSocket connection not found or not open for clientId: ${clientId}`);
+          return res.status(404).json({ message: "WebSocket connection not found. Please refresh." });
+      }
+
+      const nameExists = await checkNameExists(proxyName);
+      if (nameExists) {
+          clearTimeout(routeHttpTimeout);
+          return res.status(409).json({ message: "Name is already in use." });
+      }
+
+      clearTimeout(routeHttpTimeout);
+      res.status(202).json({ message: "Processing started." });
+
+      initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyName, proxyEmail, clientId)
+          .catch((error) => {
+              console.error("Error during background proxy creation process:", error);
+              if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type: "error", event: "proxyCreationFailedCritical", message: error.message || "A critical error occurred." }));
+              }
           });
-        }
-      }, 28000); 
 
-    if (!req.file) {
-      clearTimeout(routeHttpTimeout);
-      return res.status(400).json({ message: "No image file uploaded." });
-    }
-     if (!proxyName || !genderIdentity || !ethnicity ) {
-      clearTimeout(routeHttpTimeout);
-      return res.status(400).json({ message: "Missing required fields: proxyName, genderIdentity, or ethnicity." });
-    }
-
-    const nameExists = await checkNameExists(proxyName); 
-    if (nameExists) {
-      clearTimeout(routeHttpTimeout);
-      console.log(`Proxy name "${proxyName}" already exists.`);
-      return res.status(409).json({ message: "Name is already in use. Please choose a different name." });
-    }
-    
-    const ws = clients[clientId];
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      clearTimeout(routeHttpTimeout);
-      console.log(`WebSocket connection not found or not open for clientId: ${clientId}`);
-      return res
-        .status(404) 
-        .json({ message: "WebSocket connection not found or not open. Please refresh and try again." });
-    }
-
-    clearTimeout(routeHttpTimeout); 
-    res.status(202).json({ 
-      message: "Processing started. You will be notified via WebSocket about the progress.",
-    });
-
-    initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyName, proxyEmail)
-      .catch((error) => { 
-        console.error("Error during background proxy creation process:", error);
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "error", event: "proxyCreationFailedCritical", message: error.message || "A critical error occurred during background proxy creation." }));
-        }
-      });
-
-  } catch (error) { 
-    if (routeHttpTimeout) clearTimeout(routeHttpTimeout);
-    console.error("Error in /create-proxy route handler:", error);
-    if (!res.headersSent) {
-        res.status(500).json({ message: error.message || "An unexpected error occurred." });
-    }
+  } catch (error) {
+      if (routeHttpTimeout) clearTimeout(routeHttpTimeout);
+      console.error("Error in /create-proxy route handler:", error);
+      if (!res.headersSent) {
+          res.status(500).json({ message: error.message || "An unexpected error occurred." });
+      }
   }
 });
 
 
-// WebSocket Connection (from user's file, slightly modified)
+// WebSocket Connection (keep existing)
 wss.on("connection", (ws) => {
   const clientId = uuidv4();
-  clients[clientId] = ws;
+  clients[clientId] = { ws: ws, userId: null }; 
   console.log(`New client connected with ID: ${clientId}`);
-  ws.send(JSON.stringify({ type: "clientId", clientId })); 
+  ws.send(JSON.stringify({ type: "clientId", clientId }));
 
-  ws.on("message", (message) => {
-    try {
-      let parsedMessage;
-      if (typeof message === 'string') {
-        parsedMessage = JSON.parse(message);
-      } else if (Buffer.isBuffer(message)) {
-        parsedMessage = JSON.parse(message.toString());
-      } else {
-        console.warn("Received WebSocket message in unexpected format:", message);
-        return;
+  ws.on("message", async (message) => { 
+      try {
+          let parsedMessage;
+          if (Buffer.isBuffer(message)) {
+              parsedMessage = JSON.parse(message.toString());
+          } else {
+              parsedMessage = JSON.parse(message);
+          }
+
+          if (parsedMessage.type === "ping") {
+              ws.send(JSON.stringify({ type: "pong" }));
+          }
+          else if (parsedMessage.type === "associateUser" && parsedMessage.token) {
+              console.log(`Received associateUser for clientId: ${clientId}`);
+              try {
+                  const decodedToken = await adminAuth.verifyIdToken(parsedMessage.token);
+                  if (clients[clientId]) {
+                      clients[clientId].userId = decodedToken.uid; 
+                      console.log(`Associated user ${decodedToken.uid} with client ${clientId}`);
+                      ws.send(JSON.stringify({ type: "info", message: "Login successful! Your proxy will be saved to your account." }));
+                  }
+              } catch (error) {
+                  console.error(`Failed to associate user for ${clientId}:`, error.message);
+                  ws.send(JSON.stringify({ type: "error", message: "Login verification failed. Please try again." }));
+              }
+          }
+
+      } catch (error) {
+          console.error("Error parsing WebSocket message or unexpected format:", message, error);
       }
-      
-      if (parsedMessage.type === "ping") { 
-        ws.send(JSON.stringify({ type: "pong" }));
-      }
-    } catch (error) {
-      console.error("Error parsing WebSocket message or unexpected format:", message, error);
-    }
   });
 
   ws.on("close", () => {
-    delete clients[clientId];
-    console.log(`Client ${clientId} disconnected`);
+      delete clients[clientId];
+      console.log(`Client ${clientId} disconnected`);
   });
 
   ws.on("error", (error) => {
-    console.error(`WebSocket error for client ${clientId}:`, error);
-    delete clients[clientId];
+      console.error(`WebSocket error for client ${clientId}:`, error);
+      delete clients[clientId];
   });
 });
 
+
+// Error Handlers (keep existing)
 app.use((req, res, next) => {
-  res.status(404).render("error", {
-    message: "Page not found. We looked everywhere!",
-    error: { status: 404, stack: `Route: ${req.originalUrl}` },
-  });
+    res.status(404).render("error", {
+        message: "Page not found. We looked everywhere!",
+        error: { status: 404, stack: `Route: ${req.originalUrl}` },
+    });
 });
 
 app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err.stack);
-  res.status(err.status || 500);
-  res.render("error", {
-    message: err.message || "Oops! Something went terribly wrong.",
-    error: process.env.NODE_ENV === "development" ? err : { status: err.status || 500 },
-  });
+    console.error("Unhandled error:", err.stack);
+    res.status(err.status || 500);
+    res.render("error", {
+        message: err.message || "Oops! Something went terribly wrong.",
+        error: process.env.NODE_ENV === "development" ? err : { status: err.status || 500 },
+    });
 });
 
 
-// Start Server
+// Start Server (keep existing)
 server.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-  console.log(`Current GPT Model: ${gptModel}`); 
+    console.log(`Server running on http://localhost:${port}`);
+    console.log(`Current GPT Model: ${gptModel}`);
 });
 
-// 3. FUNCTIONS (definitions for functions called in routes)
+// 3. FUNCTIONS (Keep existing, ensure findProxyDataByName and fetchProxies are robust)
 
 function updateContextMessages(siteId, subdomain, lowerCaseProxies, data) {
-    if (!globalDataStore[siteId]) globalDataStore[siteId] = JSON.parse(JSON.stringify(data)); 
+    if (!globalDataStore[siteId]) globalDataStore[siteId] = JSON.parse(JSON.stringify(data));
 
     const currentProxyData = lowerCaseProxies[subdomain.toLowerCase()];
 
     if (siteId === "meet" && currentProxyData && typeof currentProxyData.meet !== "undefined") {
-        globalDataStore[siteId].context.message = `Say hello and introduce yourself by your name, ${currentProxyData.Proxy || subdomain}. Share a detailed overview of yourself. Ask questions to keep a conversation flowing.`;
+        globalDataStore[siteId].context.message = `Say hello and introduce yourself by your name, ${currentProxyData.OriginalProxyName || subdomain}. Share a detailed overview of yourself. Ask questions to keep a conversation flowing.`;
     } else if (siteId === "interview" && currentProxyData && typeof currentProxyData.meet !== "undefined") {
-        globalDataStore[siteId].context.message = `You are interviewing ${currentProxyData.Proxy || subdomain} for a job.`;
+        globalDataStore[siteId].context.message = `You are interviewing ${currentProxyData.OriginalProxyName || subdomain} for a job.`;
     }
 
     if (subdomain && subdomain !== "" && subdomain !== "www" && subdomain !== "ego-proxy") {
@@ -548,582 +674,488 @@ function updateContextMessages(siteId, subdomain, lowerCaseProxies, data) {
     }
 }
 
-async function fetchContextAndProxies(siteId, subdomain, guests) {
-  try {
-    console.log(`Workspaceing context and proxies for siteId: "${siteId}", subdomain: "${subdomain}"`);
-    const airTableBaseName = await findBase(siteId); 
-    if (!airTableBaseName) {
-      if (subdomain) {
-        console.log(`SiteId "${siteId}" not in Contexts, attempting to treat as proxy name for subdomain "${subdomain}"`);
-        const directProxyData = await fetchProxies([subdomain]);
-        if (directProxyData && directProxyData.length > 0) {
-            const proxyMap = directProxyData.reduce((acc, proxy) => {
-                if (proxy.fields && proxy.fields.Proxy) acc[proxy.fields.Proxy] = proxy.fields;
-                return acc;
-            }, {});
-            const data = {
-                context: { siteId: siteId, submitAsOptions: [subdomain], submitToOptions: [subdomain], message: `Chatting with ${subdomain}` },
-                proxies: proxyMap,
-                publicProxies: [],
-                yourProxies: [subdomain]
-            };
-            globalDataStore[siteId] = JSON.parse(JSON.stringify(data));
-            return data;
-        } else {
-             console.error(`Neither context for siteId "${siteId}" nor proxy for subdomain "${subdomain}" found.`);
-             return null; 
-        }
-      } else {
-        console.error(`Site ID "${siteId}" not found in any context base and no subdomain provided.`);
-        return null; 
-      }
-    }
-
-    const records = await base(airTableBaseName)
-      .select({ filterByFormula: `{siteId} = '${siteId}'` })
-      .firstPage();
-      
-    if (records.length === 0) {
-      console.log(`No context records found for siteId "${siteId}" in table "${airTableBaseName}".`);
-      return null;
-    }
-
-    const context = records[0].fields;
-    context.submitAsOptions = context.submitAsOptions || [];
-    context.submitToOptions = context.submitToOptions || [];
-
-    if (siteId !== CT) { 
-        context.submitAsOptions = updateOptionsWithSubdomain(context.submitAsOptions, guests);
-        context.submitToOptions = updateOptionsWithSubdomain(context.submitToOptions, subdomain, guests);
-    }
-
-    
-
-    const publicProxyNames = await fetchPublicProxyNames(subdomain); 
-    const yourProxyNames = await fetchYourProxyNames(subdomain);   
-
-    proxyList = [...new Set([...context.submitToOptions, ...context.submitAsOptions, ...guests])].filter(Boolean);
-
-    const fetchedProxies = await fetchProxies(proxyList); 
-
-    const proxiesMap = fetchedProxies.reduce((acc, proxy) => {
-        if (proxy.fields && proxy.fields.Proxy) {
-            acc[proxy.fields.Proxy] = proxy.fields; 
-        }
-        return acc;
-    }, {});
-
-    const normalizeOption = (option) => {
-        const foundProxy = fetchedProxies.find(p => p.fields.Proxy && p.fields.Proxy.toLowerCase() === option.toLowerCase());
-        return foundProxy ? foundProxy.fields.Proxy : option;
-    };
-
-    context.submitToOptions = [...new Set([...context.submitToOptions, ...guests])].map(normalizeOption).filter(Boolean);
-    context.submitAsOptions = [...new Set([...context.submitAsOptions, ...guests])].map(normalizeOption).filter(Boolean);
-
-    const data = {
-      context: context,
-      proxies: proxiesMap,
-      publicProxies: publicProxyNames,
-      yourProxies: yourProxyNames,
-    };
-    
-    if (!globalDataStore[siteId]) { 
-        globalDataStore[siteId] = {};
-    }
-    globalDataStore[siteId] = JSON.parse(JSON.stringify(data)); 
-
-    return data;
-  } catch (err) {
-    console.error("Detailed error fetching context and proxies: ", err);
-    throw new Error("Error fetching context and proxies: " + err.message);
-  }
-}
-
-function fetchPublicProxyNames(subdomain) {
-  return new Promise((resolve, reject) => {
-    base("Proxies")
-      .select({ filterByFormula: `FIND("Yes", {public})` })
-      .all((err, publicProxies) => {
-        if (err) {
-          console.error("Error fetching public proxies:", err);
-          reject(err);
-        } else {
-          const publicProxyNames = publicProxies
-            .map((proxy) => proxy.fields.Proxy)
-            .filter(proxyName => proxyName && subdomain && proxyName.toLowerCase() !== subdomain.toLowerCase());
-          resolve(publicProxyNames);
-        }
-      });
-  });
-}
-
-function fetchYourProxyNames(subdomain) {
-  return new Promise((resolve, reject) => {
-    if (!subdomain) return resolve([]); 
-    base("Proxies")
-      .select({ filterByFormula: `LOWER({siteId}) = LOWER('${subdomain}')`, maxRecords: 1 }) 
-      .firstPage((err, records) => {
-        if (err) { console.error("Error fetching initial proxy for email:", err); return reject(err); }
-        if (records.length === 0 || !records[0].fields.email) return resolve([]);
-
-        const email = records[0].fields.email;
-        
-        base("Proxies")
-          .select({ filterByFormula: `{email} = '${email}'`})
-          .all((err, proxies) => {
-            if (err) { console.error("Error fetching proxies by email:", err); return reject(err); }
-            const proxyNames = proxies
-              .map((proxy) => proxy.fields.Proxy)
-              .filter(proxyName => proxyName && proxyName.toLowerCase() !== subdomain.toLowerCase());
-            resolve(proxyNames);
-          });
-      });
-  });
-}
-
-function findProxyDataByName(proxyName) {
-  return new Promise((resolve, reject) => {
-    if (!proxyName || typeof proxyName !== 'string') return resolve(null); 
-    const sanitizedProxyName = proxyName.replace(/"/g, '\\"');
-    const queryOptions = {
-      filterByFormula: `LOWER({Proxy}) = LOWER("${sanitizedProxyName}")`, 
-      maxRecords: 1,
-    };
-    base("Proxies")
-      .select(queryOptions)
-      .firstPage((err, records) => {
-        if (err) {
-          console.error("Airtable select error in findProxyDataByName:", err);
-          reject(err);
-          return;
-        }
-        if (records.length === 0) {
-          console.log(`No matching record found for proxyName: "${proxyName}"`);
-          resolve(null);
-          return;
-        }
-        const record = records[0];
-        const data = {
-          id: record.id,
-          message: record.fields.message || "", 
-          Proxy: record.fields.Proxy,
-          ...(record.fields.siteId && { [record.fields.siteId]: record.fields[record.fields.siteId] || "" })
-        };
-        resolve(data);
-      });
-  });
-}
-
-function fetchProxies(submitOptions) {
-    return new Promise((resolve, reject) => {
-        if (!submitOptions || submitOptions.length === 0) {
-            return resolve([]);
-        }
-        const sanitizedOptions = submitOptions.map(option => typeof option === 'string' ? option.replace(/'/g, "\\'") : '');
-
-        const formula = sanitizedOptions
-            .filter(Boolean) 
-            .map(option => `LOWER({Proxy}) = LOWER('${option}')`)
-            .join(", ");
-
-        if (!formula) return resolve([]); 
-
-        base("Proxies")
-            .select({ filterByFormula: `OR(${formula})` })
-            .all((err, proxies) => { 
-                if (err) {
-                    console.error("Error fetching proxies in fetchProxies:", err);
-                    reject(err);
-                } else {
-                    const optionsOrder = new Map();
-                    sanitizedOptions.forEach((option, index) => { 
-                        optionsOrder.set(option.toLowerCase(), index);
-                    });
-
-                    const sortedProxies = proxies.sort((a, b) => {
-                        const nameA = a.fields.Proxy ? a.fields.Proxy.toLowerCase() : "";
-                        const nameB = b.fields.Proxy ? b.fields.Proxy.toLowerCase() : "";
-                        const indexA = optionsOrder.get(nameA);
-                        const indexB = optionsOrder.get(nameB);
-
-                        if (indexA === undefined && indexB === undefined) return 0;
-                        if (indexA === undefined) return 1; 
-                        if (indexB === undefined) return -1;
-                        return indexA - indexB;
-                    });
-                    resolve(sortedProxies);
-                }
-            });
-    });
-}
-
-function updateOptionsWithSubdomain(options = [], subdomain, guests = []) {
-  if (!Array.isArray(options)) options = [options].filter(Boolean); 
-  if (!Array.isArray(guests)) guests = [guests].filter(Boolean);
-  
-  let updatedOptions = [];
-  if (subdomain && typeof subdomain === 'string' && subdomain.trim() !== "") updatedOptions.push(subdomain);
-  
-  updatedOptions = [...updatedOptions, ...options, ...guests];
-  return [...new Set(updatedOptions)].filter(Boolean); 
-}
-
-async function findBase(siteId) {
-  if (!siteId || typeof siteId !== 'string') {
-      console.log("findBase called with invalid siteId.");
-      return null;
-  }
-  console.log("Finding base for siteId:", siteId);
-  const basesToCheck = ["Contexts"]; 
-  for (const baseName of basesToCheck) {
+async function fetchContextFromFirestore(siteId) {
     try {
-        const records = await base(baseName)
-            .select({ filterByFormula: `{siteId} = '${siteId.replace(/'/g, "\\'")}'`, maxRecords: 1 }) 
-            .firstPage();
-        if (records.length > 0) {
-            console.log(`SiteId "${siteId}" found in base: "${baseName}"`);
-            return baseName; 
+        const contextRef = db.collection('contexts').doc(siteId);
+        const doc = await contextRef.get();
+        if (!doc.exists) {
+            console.log(`No context found for siteId: ${siteId}`);
+            return null;
         }
+        console.log(`Context found for siteId: ${siteId}`);
+        return doc.data();
     } catch (error) {
-        console.error(`Error checking base "${baseName}" for siteId "${siteId}":`, error);
+        console.error(`Error fetching context "${siteId}" from Firestore:`, error);
+        return null;
     }
-  }
-  console.log(`SiteId "${siteId}" not found in any pre-defined context bases.`);
-  return null; 
+}
+
+async function fetchContextAndProxies(siteId, subdomain, guests) {
+    try {
+        console.log(`Fetching context and proxies for siteId: "${siteId}", subdomain: "${subdomain}"`);
+        const context = await fetchContextFromFirestore(siteId);
+
+        if (!context) {
+             console.error(`No context found for siteId: "${siteId}".`);
+             return null;
+        }
+
+        context.submitAsOptions = context.submitAsOptions || [];
+        context.submitToOptions = context.submitToOptions || [];
+
+        if (siteId !== CT) { // CT seems to be a special case
+            context.submitAsOptions = updateOptionsWithSubdomain(context.submitAsOptions, guests);
+            context.submitToOptions = updateOptionsWithSubdomain(context.submitToOptions, subdomain, guests);
+        }
+
+
+        const publicProxyNames = await fetchPublicProxyNames(subdomain);
+        const yourProxyNames = await fetchYourProxyNames(subdomain); // This might need adjustment based on logged-in user
+
+        // Consolidate all potential proxy names that need fetching
+        proxyList = [...new Set([subdomain, ...context.submitToOptions, ...context.submitAsOptions, ...guests])].filter(Boolean);
+
+        const fetchedProxies = await fetchProxies(proxyList);
+
+
+        const proxiesMap = fetchedProxies.reduce((acc, proxyData) => {
+            if (proxyData && proxyData.Proxy) { // Use the lowercase 'Proxy' field for mapping
+                acc[proxyData.Proxy.toLowerCase()] = proxyData; // Store by lowercase name
+            }
+            return acc;
+        }, {});
+
+
+        const normalizeOption = (option) => {
+            const foundProxy = fetchedProxies.find(p => p.Proxy && p.Proxy.toLowerCase() === option.toLowerCase());
+            return foundProxy ? foundProxy.OriginalProxyName : option; // Display original name
+        };
+        
+        context.submitToOptions = [...new Set([subdomain, ...context.submitToOptions, ...guests])].map(normalizeOption).filter(Boolean);
+        context.submitAsOptions = [...new Set([subdomain, ...context.submitAsOptions, ...guests])].map(normalizeOption).filter(Boolean);
+
+
+        const data = {
+            context: context,
+            proxies: proxiesMap, // This now contains proxies keyed by their lowercase name
+            publicProxies: publicProxyNames,
+            yourProxies: yourProxyNames, // This will be populated by client-side if needed
+        };
+
+        if (!globalDataStore[siteId]) {
+            globalDataStore[siteId] = {};
+        }
+        globalDataStore[siteId] = JSON.parse(JSON.stringify(data));
+
+        return data;
+    } catch (err) {
+        console.error("Detailed error fetching context and proxies: ", err);
+        throw new Error("Error fetching context and proxies: " + err.message);
+    }
+}
+
+async function fetchPublicProxyNames(subdomain) {
+    try {
+        const snapshot = await db.collection('proxies').where('public', '==', 'Yes').get();
+        const publicProxyNames = [];
+        snapshot.forEach(doc => {
+            const proxyName = doc.data().OriginalProxyName || doc.data().Proxy;
+            if (proxyName && subdomain && proxyName.toLowerCase() !== subdomain.toLowerCase()) {
+                publicProxyNames.push(proxyName);
+            }
+        });
+        return publicProxyNames;
+    } catch (error) {
+        console.error("Error fetching public proxies from Firestore:", error);
+        return [];
+    }
+}
+
+async function fetchYourProxyNames(subdomain) { // This function might be better handled client-side with auth
+    if (!subdomain) return [];
+    try {
+        const initialProxy = await findProxyDataByName(subdomain);
+        if (!initialProxy || !initialProxy.email) return []; // If no email, can't find "your" other proxies this way
+        const email = initialProxy.email;
+        const snapshot = await db.collection('proxies').where('email', '==', email).get();
+        const proxyNames = [];
+        snapshot.forEach(doc => {
+            const proxyName = doc.data().OriginalProxyName || doc.data().Proxy;
+            if (proxyName && proxyName.toLowerCase() !== subdomain.toLowerCase()) {
+                proxyNames.push(proxyName);
+            }
+        });
+        return proxyNames;
+    } catch (error) {
+        console.error("Error fetching your proxies from Firestore:", error);
+        return [];
+    }
+}
+
+async function findProxyDataByName(proxyName) {
+    if (!proxyName || typeof proxyName !== 'string') {
+        console.warn("findProxyDataByName called with invalid proxyName:", proxyName);
+        return null;
+    }
+    try {
+        const sanitizedProxyName = proxyName.toLowerCase();
+        const snapshot = await db.collection('proxies').where('Proxy', '==', sanitizedProxyName).limit(1).get();
+
+        if (snapshot.empty) {
+            console.log(`No matching doc found for proxyName (lowercase): "${sanitizedProxyName}"`);
+            return null;
+        }
+        const doc = snapshot.docs[0];
+        const data = doc.data();
+        data.id = doc.id; 
+        return data;
+    } catch (error) {
+        console.error("Firestore query error in findProxyDataByName for " + proxyName + ":", error);
+        return null; 
+    }
 }
 
 
-function cleanDataForPublic(data) {
-  if (typeof data !== 'object' || data === null) return data;
-  let cleanedData = JSON.parse(JSON.stringify(data)); 
-  function deleteSensitiveProperties(obj) {
-    if (typeof obj !== 'object' || obj === null) return;
-    for (const property in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, property)) {
-        const sensitiveKeywords = ["message", "description", "email", "token", "key", "password", "secret"];
-        if (sensitiveKeywords.some(keyword => property.toLowerCase().includes(keyword))) {
-          delete obj[property];
-        } else if (typeof obj[property] === "object") {
-          deleteSensitiveProperties(obj[property]); 
-        }
-      }
+async function fetchProxies(submitOptions) {
+    if (!submitOptions || submitOptions.length === 0) {
+        return [];
     }
-  }
-  deleteSensitiveProperties(cleanedData);
-  return cleanedData;
+    const uniqueOptions = [...new Set(submitOptions.map(opt => typeof opt === 'string' ? opt.toLowerCase() : opt))];
+
+    const fetchPromises = uniqueOptions
+        .filter(option => option && typeof option === 'string')
+        .map(option => findProxyDataByName(option));
+
+    try {
+        const results = await Promise.all(fetchPromises);
+        return results.filter(Boolean); 
+    } catch (error) {
+        console.error("Error fetching multiple proxies in fetchProxies:", error);
+        return [];
+    }
+}
+
+
+function updateOptionsWithSubdomain(options = [], subdomainOrGuests, additionalGuests = []) {
+    let combined = [];
+    if (Array.isArray(subdomainOrGuests)) {
+        combined = [...options, ...subdomainOrGuests];
+    } else if (subdomainOrGuests && typeof subdomainOrGuests === 'string') {
+        combined = [...options, subdomainOrGuests];
+    } else {
+        combined = [...options];
+    }
+    combined = [...combined, ...additionalGuests];
+    return [...new Set(combined.map(opt => typeof opt === 'string' ? opt.trim() : opt))].filter(Boolean);
+}
+
+
+function cleanDataForPublic(data) { // May not be needed if auth is strict
+    if (typeof data !== 'object' || data === null) return data;
+    let cleanedData = JSON.parse(JSON.stringify(data));
+    function deleteSensitiveProperties(obj) {
+        if (typeof obj !== 'object' || obj === null) return;
+        for (const property in obj) {
+            if (Object.prototype.hasOwnProperty.call(obj, property)) {
+                const sensitiveKeywords = ["message", "description", "email", "token", "key", "password", "secret"];
+                if (sensitiveKeywords.some(keyword => property.toLowerCase().includes(keyword))) {
+                    delete obj[property];
+                } else if (typeof obj[property] === "object") {
+                    deleteSensitiveProperties(obj[property]);
+                }
+            }
+        }
+    }
+    deleteSensitiveProperties(cleanedData);
+    return cleanedData;
 }
 
 function createPayload(systemMsg, userMsg) {
-  return {
-    model: gptModel, 
-    messages: [
-      { role: "system", content: systemMsg },
-      { role: "user", content: userMsg },
-    ],
-    temperature: 1,
-    max_tokens: 500, 
-    top_p: 1,
-    frequency_penalty: 0.5,
-    presence_penalty: 0,
-  };
+    return {
+        model: gptModel,
+        messages: [
+            { role: "system", content: systemMsg },
+            { role: "user", content: userMsg },
+        ],
+        temperature: 1,
+        max_tokens: 500,
+        top_p: 1,
+        frequency_penalty: 0.5,
+        presence_penalty: 0,
+    };
 }
 
 async function getAssistantResponse(payload) {
-  return await openai.chatCompletion(payload); 
+    return await openai.chatCompletion(payload);
 }
 
-function checkNameExists(name) {
-  return new Promise((resolve, reject) => {
-    if (!name || typeof name !== 'string') return resolve(false); 
-    const sanitizedName = name.replace(/"/g, '\\"');
-    base("Proxies")
-      .select({ filterByFormula: `LOWER({Proxy}) = LOWER("${sanitizedName}")`, maxRecords: 1 })
-      .firstPage((err, records) => {
-        if (err) { console.error("Error in checkNameExists:", err); reject(err); return; }
-        resolve(records.length > 0);
-      });
-  });
+async function checkNameExists(name) {
+    if (!name || typeof name !== 'string') return false;
+    try {
+        const sanitizedName = name.toLowerCase();
+        const snapshot = await db.collection('proxies').where('Proxy', '==', sanitizedName).limit(1).get();
+        return !snapshot.empty; 
+    } catch (error) {
+        console.error("Error in checkNameExists:", error);
+        return false; // Default to false on error to prevent blocking valid names
+    }
 }
+
 
 async function sendMail(generatedUrls, proxyEmail, proxyName, domain) {
-  if (!proxyEmail) {
-    console.error("Proxy email is missing for sendMail");
-    return Promise.reject(new Error("Proxy email is missing. Cannot send confirmation."));
-  }
-  if (!generatedUrls || !generatedUrls.joy) { 
-    console.error("Joy URL is missing in generatedUrls for sendMail");
-    return Promise.reject(new Error("Required image URL (joy) for email is missing."));
-  }
+    if (!proxyEmail) {
+        console.error("Proxy email is missing for sendMail");
+        return Promise.reject(new Error("Proxy email is missing. Cannot send confirmation."));
+    }
+    if (!generatedUrls || !generatedUrls.joy) {
+        console.error("Joy URL is missing in generatedUrls for sendMail");
+        return Promise.reject(new Error("Required image URL (joy) for email is missing."));
+    }
+    const proxySubdomain = proxyName.toLowerCase();
+    const hostParts = domain.split('.');
+    const baseDomain = hostParts.length > 1 ? hostParts.slice(1).join('.') : domain; // e.g., ego-proxy.com or localhost:3001
 
-  return new Promise((resolve, reject) => {
-    try {
-      console.log(`Preparing to send proxy creation email to: ${proxyEmail}`);
-      const mailOptions = {
-        from: `"Ego-Proxy" <${emailUser}>`, 
-        to: proxyEmail,
-        subject: "Your Ego-Proxy is Ready: " + proxyName,
-        html: `
+    return new Promise((resolve, reject) => {
+        try {
+            console.log(`Preparing to send proxy creation email to: ${proxyEmail}`);
+            const mailOptions = {
+                from: `"Ego-Proxy" <${emailUser}>`,
+                to: proxyEmail,
+                subject: "Your Ego-Proxy is Ready: " + proxyName,
+                html: `
           <p>Meet your new Ego-Proxy:</p>
           <p>Name: ${proxyName}</p>
           <p>
-            <a href='https://${proxyName}.${domain}/meet'>
+            <a href='http://${proxySubdomain}.${baseDomain}/meet'>
               <img src="${generatedUrls.joy}" style="max-width: 300px; border: 1px solid #ddd;" alt="${proxyName} - Joyful Expression" />
             </a>
           </p>
-          <p><a href='https://${proxyName}.${domain}/meet'>Click here</a> to meet and further train your proxy to emulate you.
+          <p><a href='http://${proxySubdomain}.${baseDomain}/meet'>Click here</a> to meet and further train your proxy to emulate you.
           </p>
           <p>Best,<br/>The Ego-Proxy Team</p>
         `,
-      };
-      transporter.sendMail(mailOptions, function (error, info) {
-        if (error) {
-          console.error("Error sending email:", error);
-          reject(new Error("Error sending email: " + error.message));
-        } else {
-          console.log("Confirmation email sent successfully to " + proxyEmail + ": " + info.response);
-          resolve("Proxy creation email sent.");
+            };
+            transporter.sendMail(mailOptions, function (error, info) {
+                if (error) {
+                    console.error("Error sending email:", error);
+                    reject(new Error("Error sending email: " + error.message));
+                } else {
+                    console.log("Confirmation email sent successfully to " + proxyEmail + ": " + info.response);
+                    resolve("Proxy creation email sent.");
+                }
+            });
+        } catch (error) {
+            console.error("Critical error in sendMail function structure:", error);
+            reject(new Error("Critical error in sendMail function structure: " + error.message));
         }
-      });
+    });
+}
+
+async function generateContent(transcript, context, systemContent) {
+    const payload = createPayload(systemContent, transcript);
+    try {
+        console.log("Generating content with system prompt:", systemContent.substring(0, 100) + "...");
+        return await openai.chatCompletion(payload);
     } catch (error) {
-      console.error("Critical error in sendMail function structure:", error);
-      reject(new Error("Critical error in sendMail function structure: " + error.message));
+        console.error("Error while generating content via openai.chatCompletion:", error);
+        return "Failed to generate content due to an internal error.";
     }
-  });
 }
 
-async function generateContent(transcript, context, systemContent) { 
-  const payload = createPayload(systemContent, transcript); 
-  try {
-    console.log("Generating content with system prompt:", systemContent.substring(0,100) + "...");
-    return await openai.chatCompletion(payload);
-  } catch (error) {
-    console.error("Error while generating content via openai.chatCompletion:", error);
-    return "Failed to generate content due to an internal error."; 
-  }
-}
+async function summarizeTranscript(transcript, siteId, user, profile) {
+    let systemContent = "";
+    let revise = profile ? ` Incorporate details from their previous profile: "${profile}".` : "";
 
-async function summarizeTranscript(transcript, siteId, user, profile) { 
-  let systemContent = ""; 
-  let revise = profile ? ` Incorporate details from their previous profile: "${profile}".` : "";
-
-  if (siteId === "meet") {
-    let person = !profile ? "You" : user;
-    systemContent = `Use the responses by '${person}' in this transcript to conduct a profound psychological analysis of the communication transcript. Distill the essence of the individual's personality into a 100-word character portrait that reveals:
+    if (siteId === "meet") {
+        let person = !profile ? "You" : user;
+        systemContent = `Use the responses by '${person}' in this transcript to conduct a profound psychological analysis of the communication transcript. Distill the essence of the individual's personality into a 100-word character portrait that reveals:
 Psychological Dimensions: Core communication archetypes, Emotional landscape and defense mechanisms, Implicit belief systems, Linguistic fingerprints and rhetorical strategies.
 Analytical Framework: Decode subtext beyond literal language, Identify underlying motivations and worldview, Extract patterns of thought and expression, Recognize subtle emotional undertones.
 Persona Generation Guidelines: Maintain authentic voice and communication rhythm, Reflect nuanced psychological complexity, Preserve individual's unique cognitive and emotional signature, Avoid stereotyping or reductive characterization.
 System Prompt Construction Criteria: Create response generation instructions, Define interaction boundaries, Establish consistent personality expression, Capture linguistic and emotional variability.
 Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves. Only include the prompt, do not include a line labelling it as a prompt. Do not mention name. ${revise}`;
-  } else if (siteId === "interview") {
-    systemContent = `Use the responses in this transcript to generate a concise summary of ${user}'s professional experience. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves during an interview. Do not use Markdown.${revise}`;
-  } else if (siteId === "date") {
-    systemContent = `Use the responses in this transcript to generate a dating profile for ${user}. Do not use Markdown.${revise}`;
-  } else if (siteId === "debate") {
-    systemContent = `Use the responses in this transcript to create a profile of ${user}'s beliefs.  Do not use Markdown.${revise}`;
-  } else if (siteId === "adventure") {
-    systemContent = `Use the responses in this transcript to create a profile of ${user}'s adventure style.  Do not use Markdown.${revise}`;
-  } else {
-    systemContent = `Summarize the personality of ${user} based on this transcript. ${revise}`;
-  }
-  return await generateContent(transcript, siteId, systemContent); 
+    } else if (siteId === "interview") {
+        systemContent = `Use the responses in this transcript to generate a concise summary of ${user}'s professional experience. Optimize this summary to be used as a ChatGPT system prompt to inform how the character behaves during an interview. Do not use Markdown.${revise}`;
+    } else if (siteId === "date") {
+        systemContent = `Use the responses in this transcript to generate a dating profile for ${user}. Do not use Markdown.${revise}`;
+    } else if (siteId === "debate") {
+        systemContent = `Use the responses in this transcript to create a profile of ${user}'s beliefs.  Do not use Markdown.${revise}`;
+    } else if (siteId === "adventure") {
+        systemContent = `Use the responses in this transcript to create a profile of ${user}'s adventure style.  Do not use Markdown.${revise}`;
+    } else {
+        systemContent = `Summarize the personality of ${user} based on this transcript. ${revise}`;
+    }
+    return await generateContent(transcript, siteId, systemContent);
 }
 
-// Updated initiateProxyCreation for CONCURRENT emotion image generation
-// Located in src/server/server.js
 
-async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyName, proxyEmail) {
-  console.log(`Initiating proxy creation for: ${proxyName}, Ethnicity: ${ethnicity}, Gender: ${genderIdentity}`);
-  const domain = req.get("host");
+async function initiateProxyCreation(req, ws, ethnicity, genderIdentity, proxyName, proxyEmail, clientId) { 
+    console.log(`Initiating proxy creation for: ${proxyName}, Ethnicity: ${ethnicity}, Gender: ${genderIdentity}, ClientID: ${clientId}`);
+    const domain = req.get("host");
 
-  const emotionsToGenerate = {
-    speak: "friendliness with mouth open.",
-    friendly: "friendliness with mouth closed.",
-    confused: "confusion.",
-    joy: "joyous LAUGHTER!",
-    sad: "sadness.",
-    disgust: "disgust.",
-    angry: "anger.",
-    fear: "fear.",
-    embarrassed: "embarrassment. Blushing.",
-    intrigued: "deeply intrigued.",
-  };
-  const generatedEmotionUrls = {
-    speak: null, friendly: null, confused: null, joy: null, sad: null,
-    disgust: null, angry: null, fear: null, embarrassed: null, intrigued: null
-  };
+    const emotionsToGenerate = {
+        speak: "neutral with mouth open.",
+        friendly: "neutral with mouth closed.",
+        confused: "confusion.",
+        joy: "laughter.",
+        sad: "sadness.",
+        disgust: "disgust.",
+        angry: "anger.",
+        fear: "fear.",
+        embarrassed: "embarrassment. Blushing.",
+        intrigued: "interest. Eyebrow raised.",
+    };
+    const generatedEmotionUrls = {
+        speak: null, friendly: null, confused: null, joy: null, sad: null,
+        disgust: null, angry: null, fear: null, embarrassed: null, intrigued: null
+    };
 
-  // Adjusted total steps to be more granular for feedback
-  // 1 (Start), 1 (Base Style Applied), N (Emotions), 1 (Airtable), 1 (Email if applicable) = 3/4 + N
-  const totalSteps = 2 + Object.keys(emotionsToGenerate).length + 1 + (proxyEmail ? 1 : 0);
-  let completedSteps = 0;
+    const totalSteps = 2 + Object.keys(emotionsToGenerate).length + 1 + (proxyEmail ? 1 : 0);
+    let completedSteps = 0;
 
-  const sendProgress = (stepMessage, increment = true) => {
-    if (increment) {
-      completedSteps++;
+    const sendProgress = (stepMessage, increment = true) => {
+        if (increment) {
+            completedSteps++;
+        }
+        const currentProgressSteps = Math.min(completedSteps, totalSteps);
+        const percentageComplete = Math.floor((currentProgressSteps / totalSteps) * 100);
+
+        console.log(`Proxy Creation Progress for ${proxyName}: ${percentageComplete}% (${stepMessage})`);
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: "progress",
+                event: "progress",
+                percentage: percentageComplete,
+                message: stepMessage,
+                step: currentProgressSteps,
+                totalSteps: totalSteps
+            }));
+        }
+    };
+
+    try {
+        sendProgress(`Starting creation for ${proxyName}...`, true);
+
+        const baseImageBuffer = req.file.buffer;
+        const uploadedImageBase64 = baseImageBuffer.toString("base64");
+
+        const baseStyleDefinition = `Style: Altcomix style emphasizing a clear, recognizable likeness of a ${ethnicity} ${genderIdentity} without detailed textures. The eyes must be directed straight forward. The background must be pure black. The overall emotion and expression should be exaggerated in a cartoonish way.`;
+        const neutralStylePrompt = `A neutral facial expression. ${baseStyleDefinition}`;
+
+        sendProgress("Applying artistic style to your image...", false);
+
+        console.log(`Generating styled base image for ${proxyName} with prompt: "${neutralStylePrompt.substring(0, 100)}..."`);
+        const styledBaseImageBase64 = await openai.editImage(uploadedImageBase64, neutralStylePrompt);
+
+        sendProgress("Base image styled. Preparing emotional expressions...", true);
+
+        console.log(`Starting concurrent generation of emotional variations for ${proxyName}...`);
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "info", event: "emotionGenerationBatchStart", message: "Generating all emotional expressions..." }));
+        }
+
+        const emotionEditPromises = Object.entries(emotionsToGenerate).map(async ([emotionKey, emotionDescription]) => {
+            const emotionSpecificPrompt = `The character should appear the same but conveying ${emotionDescription}. ${baseStyleDefinition}`;
+            console.log(`  [Starting] Generation for ${emotionKey} for ${proxyName}`);
+            try {
+                const finalEmotionImageBase64 = await openai.editImage(styledBaseImageBase64, emotionSpecificPrompt);
+                const url = await uploadBase64ToFirebase(finalEmotionImageBase64);
+                console.log(`  [Completed] ${emotionKey} for ${proxyName} - URL: ${url ? 'OK' : 'Failed Upload'}`);
+                sendProgress(`Generated ${emotionKey} expression`, true);
+                return { emotionKey, url, success: true };
+            } catch (error) {
+                console.error(`  [Failed] Generation for ${emotionKey} for ${proxyName}:`, error.message);
+                sendProgress(`Failed to generate ${emotionKey} expression`, true);
+                return { emotionKey, url: null, success: false, error: error.message };
+            }
+        });
+
+        const results = await Promise.allSettled(emotionEditPromises);
+
+        results.forEach(result => {
+            if (result.status === 'fulfilled' && result.value.success) {
+                generatedEmotionUrls[result.value.emotionKey] = result.value.url;
+            } else if (result.status === 'fulfilled' && !result.value.success) {
+                console.error(`Fulfilled but failed task for ${result.value.emotionKey}: ${result.value.error}`);
+            } else if (result.status === 'rejected') {
+                console.error(`An unexpected error occurred in an emotion generation promise (rejected):`, result.reason);
+            }
+        });
+
+        console.log(`All emotional image generation tasks attempted for ${proxyName}. Preparing to save to Firestore...`);
+        sendProgress("Saving proxy details to Firestore...", true);
+
+        const userId = clients[clientId] ? clients[clientId].userId : null; 
+        console.log(`Saving proxy ${proxyName}. Associated User ID: ${userId || 'None'}`);
+  
+        const proxyData = {
+            "Proxy": proxyName.toLowerCase(), 
+            "OriginalProxyName": proxyName, 
+            "userId": userId, 
+            "genderIdentity": genderIdentity,
+            "email": proxyEmail || null,
+            "imagePrefix": `img/Guest/${proxyName}/`, // This might be legacy if all images are URLs
+            "speak": generatedEmotionUrls.speak ? [{ url: generatedEmotionUrls.speak }] : [],
+            "friendly": generatedEmotionUrls.friendly ? [{ url: generatedEmotionUrls.friendly }] : [],
+            "confused": generatedEmotionUrls.confused ? [{ url: generatedEmotionUrls.confused }] : [],
+            "joy": generatedEmotionUrls.joy ? [{ url: generatedEmotionUrls.joy }] : [],
+            "sad": generatedEmotionUrls.sad ? [{ url: generatedEmotionUrls.sad }] : [],
+            "disgust": generatedEmotionUrls.disgust ? [{ url: generatedEmotionUrls.disgust }] : [],
+            "fear": generatedEmotionUrls.fear ? [{ url: generatedEmotionUrls.fear }] : [],
+            "angry": generatedEmotionUrls.angry ? [{ url: generatedEmotionUrls.angry }] : [],
+            "embarrassed": generatedEmotionUrls.embarrassed ? [{ url: generatedEmotionUrls.embarrassed }] : [],
+            "intrigued": generatedEmotionUrls.intrigued ? [{ url: generatedEmotionUrls.intrigued }] : [],
+            "public": "No", // Default to not public
+            "createdAt": new Date()
+        };
+        const docRef = await db.collection("proxies").add(proxyData); 
+
+        console.log(`Successfully created proxy record for ${proxyName} with ID: ${docRef.id} for user ${userId}`);
+
+        if (proxyEmail && generatedEmotionUrls.joy) {
+            sendProgress("Sending confirmation email...", true);
+            console.log(`Sending confirmation email to ${proxyEmail} for ${proxyName}...`);
+            await sendMail(generatedEmotionUrls, proxyEmail, proxyName, domain);
+        } else {
+            if (!proxyEmail) console.log("No email provided, skipping confirmation email.");
+            if (!generatedEmotionUrls.joy) console.log("Joy URL missing, cannot send image in email.");
+            if (proxyEmail && !generatedEmotionUrls.joy) { // Ensure step is counted if email was intended but image failed
+                completedSteps++; 
+            }
+        }
+
+        const finalPercentage = 100;
+        const finalStepMessage = "Proxy creation complete!";
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: "progress",
+                event: "progress",
+                percentage: finalPercentage,
+                message: finalStepMessage,
+                step: totalSteps, // Ensure this reflects actual completion
+                totalSteps: totalSteps
+            }));
+            ws.send(JSON.stringify({
+                type: "success",
+                event: "proxyCreated",
+                proxyName: proxyName, // Original case name
+                proxySubdomain: proxyName.toLowerCase(), // Subdomain
+                domain: domain, // Full host domain
+                message: "Proxy created successfully! You can now meet your proxy.",
+                data: { proxyName: proxyName, proxySubdomain: proxyName.toLowerCase(), domain: domain, email: proxyEmail, urls: generatedEmotionUrls }
+            }));
+        }
+
+    } catch (err) {
+        console.error(`Critical error during initiateProxyCreation for ${proxyName}:`, err);
+        if (ws.readyState === WebSocket.OPEN) {
+            const errorMessage = (err && err.message) ? err.message : "An undefined error occurred during proxy creation.";
+            ws.send(JSON.stringify({
+                type: "error",
+                event: "proxyCreationFailedFull",
+                message: `Failed to create proxy. ${errorMessage}`,
+                details: err ? JSON.stringify(err, Object.getOwnPropertyNames(err)) : "Error details unavailable."
+            }));
+        }
     }
-    // Ensure completedSteps doesn't exceed totalSteps due to non-incrementing messages
-    const currentProgressSteps = Math.min(completedSteps, totalSteps);
-    const percentageComplete = Math.floor((currentProgressSteps / totalSteps) * 100);
-
-    console.log(`Proxy Creation Progress for ${proxyName}: ${percentageComplete}% (${stepMessage})`);
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: "progress",
-        event: "progress",
-        percentage: percentageComplete,
-        message: stepMessage,
-        step: currentProgressSteps,
-        totalSteps: totalSteps
-      }));
-    }
-  };
-
-  try {
-    // Initial message (counts as step 1)
-    sendProgress(`Starting creation for ${proxyName}...`, true); // Step 1
-
-    const baseImageBuffer = req.file.buffer;
-    const uploadedImageBase64 = baseImageBuffer.toString("base64");
-
-    const baseStyleDefinition = `Style: Altcomix style emphasizing a clear, recognizable likeness of a ${ethnicity} ${genderIdentity} without detailed textures. The eyes must be directed straight forward. The background must be pure black. The overall emotion and expression should be exaggerated in a cartoonish way.`;
-    const neutralStylePrompt = `A neutral facial expression. ${baseStyleDefinition}`;
-
-    // Message before starting the first potentially long operation
-    sendProgress("Applying artistic style to your image...", false); // Still part of step 1, or consider it step 1.5 visual feedback
-
-    console.log(`Generating styled base image for ${proxyName} with prompt: "${neutralStylePrompt.substring(0, 100)}..."`);
-    const styledBaseImageBase64 = await openai.editImage(uploadedImageBase64, neutralStylePrompt); // This is the first DALL-E call
-
-    // Message after the first long operation completes (counts as step 2)
-    sendProgress("Base image styled. Preparing emotional expressions...", true); // Step 2
-
-    console.log(`Starting concurrent generation of emotional variations for ${proxyName}...`);
-    if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "info", event: "emotionGenerationBatchStart", message: "Generating all emotional expressions..." }));
-    }
-
-    const emotionEditPromises = Object.entries(emotionsToGenerate).map(async ([emotionKey, emotionDescription]) => {
-      const emotionSpecificPrompt = `The character should appear the same but conveying ${emotionDescription}. ${baseStyleDefinition}`;
-      console.log(`  [Starting] Generation for ${emotionKey} for ${proxyName}`);
-      try {
-        const finalEmotionImageBase64 = await openai.editImage(styledBaseImageBase64, emotionSpecificPrompt);
-        const url = await uploadBase64ToFirebase(finalEmotionImageBase64);
-        console.log(`  [Completed] ${emotionKey} for ${proxyName} - URL: ${url ? 'OK' : 'Failed Upload'}`);
-        sendProgress(`Generated ${emotionKey} expression`, true); // Each emotion is a step
-        return { emotionKey, url, success: true };
-      } catch (error) {
-        console.error(`  [Failed] Generation for ${emotionKey} for ${proxyName}:`, error.message);
-        sendProgress(`Failed to generate ${emotionKey} expression`, true); // Still count as a step attempt
-        return { emotionKey, url: null, success: false, error: error.message };
-      }
-    });
-
-    const results = await Promise.allSettled(emotionEditPromises);
-
-    results.forEach(result => {
-      if (result.status === 'fulfilled' && result.value.success) {
-        generatedEmotionUrls[result.value.emotionKey] = result.value.url;
-      } else if (result.status === 'fulfilled' && !result.value.success) {
-        console.error(`Fulfilled but failed task for ${result.value.emotionKey}: ${result.value.error}`);
-      } else if (result.status === 'rejected') {
-        console.error(`An unexpected error occurred in an emotion generation promise (rejected):`, result.reason);
-      }
-    });
-
-    console.log(`All emotional image generation tasks attempted for ${proxyName}. Preparing to save to Airtable...`);
-    sendProgress("Saving proxy details to Airtable...", true); // Airtable save is a step
-
-    await base("Proxies").create({
-        "Proxy": proxyName,
-        "genderIdentity": genderIdentity,
-        "email": proxyEmail,
-        "imagePrefix": `img/Guest/${proxyName}/`, // This might be legacy if all URLs are absolute
-        "speak": generatedEmotionUrls.speak ? [{ url: generatedEmotionUrls.speak }] : undefined,
-        "friendly": generatedEmotionUrls.friendly ? [{ url: generatedEmotionUrls.friendly }] : undefined,
-        "confused": generatedEmotionUrls.confused ? [{ url: generatedEmotionUrls.confused }] : undefined,
-        "joy": generatedEmotionUrls.joy ? [{ url: generatedEmotionUrls.joy }] : undefined,
-        "sad": generatedEmotionUrls.sad ? [{ url: generatedEmotionUrls.sad }] : undefined,
-        "disgust": generatedEmotionUrls.disgust ? [{ url: generatedEmotionUrls.disgust }] : undefined,
-        "fear": generatedEmotionUrls.fear ? [{ url: generatedEmotionUrls.fear }] : undefined,
-        "angry": generatedEmotionUrls.angry ? [{ url: generatedEmotionUrls.angry }] : undefined,
-        "embarrassed": generatedEmotionUrls.embarrassed ? [{ url: generatedEmotionUrls.embarrassed }] : undefined,
-        "intrigued": generatedEmotionUrls.intrigued ? [{ url: generatedEmotionUrls.intrigued }] : undefined,
-      })
-      .catch((err) => {
-        console.error("Error directly from Airtable base.create() during record creation:", err);
-        let newError = new Error(`Airtable create failed directly. Status: ${err.statusCode || 'N/A'}. Message: ${err.message || 'No specific error message.'}. Type: ${err.error || 'N/A'}`);
-        newError.statusCode = err.statusCode;
-        newError.type = err.error;
-        newError.originalError = err;
-        throw newError;
-      });
-
-    console.log(`Successfully created proxy record in Airtable for ${proxyName}`);
-
-    if (proxyEmail && generatedEmotionUrls.joy) {
-      sendProgress("Sending confirmation email...", true); // Email is a step
-      console.log(`Sending confirmation email to ${proxyEmail} for ${proxyName}...`);
-      await sendMail(generatedEmotionUrls, proxyEmail, proxyName, domain);
-    } else {
-      if (!proxyEmail) console.log("No email provided, skipping confirmation email.");
-      if (!generatedEmotionUrls.joy) console.log("Joy URL missing, cannot send image in email.");
-      // If email is skipped, ensure progress reflects this or adjust totalSteps
-      if (proxyEmail && !generatedEmotionUrls.joy) {
-          completedSteps++; // Still count the "attempt" if email was supposed to send
-      }
-    }
-
-    // Final completion message
-    // Ensure all steps are marked as completed for 100%
-    const finalPercentage = 100;
-    const finalStepMessage = "Proxy creation complete!";
-    if (ws.readyState === WebSocket.OPEN) {
-       ws.send(JSON.stringify({
-           type: "progress",
-           event: "progress",
-           percentage: finalPercentage,
-           message: finalStepMessage,
-           step: totalSteps, // Ensure we report the total number of steps
-           totalSteps: totalSteps
-       }));
-      ws.send(JSON.stringify({
-        type: "success",
-        event: "proxyCreated",
-        proxyName: proxyName,
-        domain: domain,
-        message: "Proxy created successfully! You can now meet your proxy.",
-        data: { proxyName, domain, email: proxyEmail, urls: generatedEmotionUrls }
-      }));
-    }
-
-  } catch (err) {
-    console.error(`Critical error during initiateProxyCreation for ${proxyName}:`);
-    // ... (error handling remains the same) ...
-    if (err && typeof err === 'object') {
-        console.error("Error properties:", Object.getOwnPropertyNames(err));
-        console.error("Error (JSON stringified with properties):", JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
-    } else {
-        console.error("Error object (raw):", err);
-    }
-    if (err && err.stack) console.error("Stack trace:", err.stack);
-    else console.error("No stack trace. Error toString():", err ? err.toString() : "Error was undefined or null");
-
-    if (ws.readyState === WebSocket.OPEN) {
-      const errorMessage = (err && err.message) ? err.message : "An undefined error occurred during proxy creation.";
-      let errorDetails = err ? (err.details || JSON.stringify(err, Object.getOwnPropertyNames(err))) : "Error object was undefined";
-       if (err && err.originalError && err.originalError.message) {
-          errorDetails = `Original Airtable Error: ${err.originalError.message} (Status: ${err.originalError.statusCode || 'N/A'}, Type: ${err.originalError.error || 'N/A'})`;
-      } else if (err && err.error && err.message) {
-          errorDetails = `Airtable Error: ${err.type || err.error} - ${err.message} (Status: ${err.statusCode || 'N/A'})`;
-      }
-
-      ws.send(JSON.stringify({
-          type: "error",
-          event: "proxyCreationFailedFull",
-          message: `Failed to create proxy. ${errorMessage}`,
-          details: errorDetails
-      }));
-    }
-  }
 }

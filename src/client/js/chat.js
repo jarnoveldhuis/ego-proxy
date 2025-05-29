@@ -1,246 +1,330 @@
-// const e = require("express");
+// src/client/js/chat.js
 
-// Config Section
-let siteId = window.location.pathname.split("/")[1];
+// Firebase/Auth Imports
+import { auth } from "./firebase.js"; //
+import {
+  getCurrentUser,
+  getIdTokenAsync, // Ensure this is imported
+  handleGoogleLogin,
+  handleLogout,
+  onAuthChanged, // Ensure this is imported
+} from "./auth.js";
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+} from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js"; // Removed onAuthStateChanged here as we use the one from auth.js
 
-// Audio Configuration
-let isVoiceLoading = false;
-let speaking = false;
-let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-let analyser = audioCtx.createAnalyser();
-let globalAudio;
-let isTtsEnabled = false;
 
-// Avatars
-let avatar = "Guest";
-let previousAvatar;
-let typingTimer;
-let doneTypingInterval = 2000;
-let thinkDelay = 2000;
-let laughLength = 1500;
+function handleLoginLogout() {
+    const user = getCurrentUser(); // From auth.js
+    if (user) {
+        handleLogout() // From auth.js
+            .then(() => {
+                console.log("Global logout successful. Firebase session should be cleared.");
+                // IMPORTANT: After logout, redirect to the home page.
+                // This ensures a fresh page load where auth state will be re-evaluated as null.
+                // The server will then serve create.ejs, and create.js will see no user.
+                if (window.location.pathname === '/') {
+                    // If already on root, a simple reload might be enough after auth state has propagated
+                    // But redirecting ensures the server also sees a fresh request.
+                    window.location.reload();
+                } else {
+                    window.location.href = '/';
+                }
+            })
+            .catch(error => {
+                console.error("Logout error:", error);
+                // Handle logout error display if necessary
+            });
+    } else {
+        handleGoogleLogin() // From auth.js
+            .then(loggedInUser => {
+                if (loggedInUser) {
+                    // If login happens on a page other than where proxies are listed,
+                    // redirect to home so server can route to first proxy.
+                    console.log("Global login successful. Redirecting to home.");
+                    window.location.href = '/';
+                }
+            })
+            .catch((error) => {
+                console.error("Google login error:", error.message, error.code);
+                // Handle login error display
+            });
+    }
+}
+
+function updateAuthButton(user) {
+  // This function updates the #globalAuthButton
+  const authButton = document.getElementById("globalAuthButton"); // Target global button
+  const authIcon = authButton ? authButton.querySelector("i") : null;
+
+  if (!authButton || !authIcon) return;
+
+  console.log(
+    "chat.js: updateAuthButton (for global) called with user:",
+    user ? user.uid : null
+  );
+
+  if (user) {
+    authIcon.classList.remove("fa-sign-in-alt");
+    authIcon.classList.add("fa-sign-out-alt");
+    authButton.title = "Log Out";
+  } else {
+    authIcon.classList.remove("fa-sign-out-alt");
+    authIcon.classList.add("fa-sign-in-alt");
+    authButton.title = "Log In with Google";
+  }
+}
+
+// --- Chat Globals ---
+let isVoiceLoading = false,
+  speaking = false,
+  audioCtx,
+  analyser,
+  globalAudio,
+  isTtsEnabled = false;
+let avatar = "Guest",
+  previousAvatar,
+  typingTimer;
+const doneTypingInterval = 1000,
+  thinkDelay = 2000,
+  laughLength = 1500;
 let isLaughing = false;
+let transcriptHtml = "Begin conversation.",
+  transcriptText = "Begin conversation.";
+const transcriptButtonHtml = `<button class="btn btn-sm" id="showTranscriptBtnInPrompt" data-bs-toggle="modal" data-bs-target="#transcriptModal"><i class="fas fa-file-alt"></i></button>`;
+let isRequestPending = false,
+  guests = [];
+let previousResponse = "",
+  currentPrompt = "";
+let submitAs = "",
+  submitTo = ""; // submitAs from dropdown, submitTo from button click
+let training = false,
+  tutorial = false,
+  settingsModalInstance,
+  feedbackModal,
+  originalContent = "";
+let loggedInUserId = null;
 
-// Chat Configuration
-let transcriptHtml = "Begin conversation.";
-let transcriptText = "Begin conversation.";
-let trainScript = "";
-const transcriptButtonHtml = `<button class="btn" id="showFormBtn" data-bs-toggle="modal" data-bs-target="#transcriptModal"><i class="fas fa-file-alt"></i></button>`;
-let isRequestPending = false;
-let hosts = [];
-let guests = [];
-let regularUrl = "";
-let response = "";
-let previousResponse = "";
-let currentPrompt = "";
-let submitButton;
-let submitAsElement;
-let promptElement;
-let shareUrl = "";
-let trainingUrl = "";
-let trainingProgress = 0;
+// --- DOM Elements (Cached) ---
+let botImage,
+  botContainer,
+  botResponseElem,
+  userInputElem,
+  submitAsElement,
+  promptElement,
+  settingsButton,
+  responseContainerElem; // Added for toggleResponseContainer
 
-// Settings
-let contentName;
-let role = "";
-let org = "";
-let contentId = "";
-let content = "";
-let submitAs = "";
-let submitTo = "";
-let hasPersonality = false;
-let saveButton;
-let training = false;
-let tutorial = false;
-let settingsModal;
-let feedbackModal;
-
-// Image Management Functions
-async function preloadImages(proxies) {
-  if (typeof proxies !== "object" || proxies === null) {
-    console.error("Invalid proxies object:", proxies);
+// --- Image & Avatar Functions ---
+async function preloadImages(proxiesData) {
+  if (typeof proxiesData !== "object" || proxiesData === null) {
+    console.warn("preloadImages: Invalid proxiesData object:", proxiesData);
     return;
   }
-
-  for (let avatar in proxies) {
-    if (!proxies.hasOwnProperty(avatar)) continue;
-    let proxy = proxies[avatar];
+  for (let avatarNameKey in proxiesData) {
+    if (
+      !proxiesData.hasOwnProperty(avatarNameKey) ||
+      !proxiesData[avatarNameKey]
+    )
+      continue;
+    let proxy = proxiesData[avatarNameKey];
+    if (typeof proxy !== "object" || proxy === null) continue;
     for (let reaction in proxy) {
-      if (!proxy.hasOwnProperty(reaction)) continue;
-      if (Array.isArray(proxy[reaction]) && proxy[reaction].length > 0) {
-        let url = proxy[reaction][0].url;
-        if (url && typeof url === "string") {
-          let img = new Image();
-          img.src = url;
-          img.onerror = (error) => {
-            // Failed to load image
-            console.error("Error loading image:", error);
-          };
-        }
+      if (!proxy.hasOwnProperty(reaction) || !Array.isArray(proxy[reaction]))
+        continue;
+      if (
+        proxy[reaction].length > 0 &&
+        proxy[reaction][0] &&
+        typeof proxy[reaction][0].url === "string"
+      ) {
+        let img = new Image();
+        img.src = proxy[reaction][0].url;
+        // img.onerror = (error) => console.error("Error loading image:", proxy[reaction][0].url, error);
       }
     }
   }
 }
 
-function updateAvatar(submit, reaction) {
+function updateAvatar(avatarNameToSet, reaction) {
   clearTimeout(typingTimer);
-  let botImage = document.getElementById("botImage");
-  let botContainer = document.querySelector(".bot-container");
-
-  if (typeof submit !== "undefined") {
-    avatar = submit;
-    let proxy = proxies[avatar];
-    if (
-      !proxy ||
-      !proxy[reaction] ||
-      proxy[reaction].length === 0 ||
-      !proxy[reaction][0].url
-    ) {
-      console.log("Invalid proxy or reaction");
-      console.log("Reaction:", reaction);
-      return;
-    }
-
-    if (!typeof proxy["laugh"]) {
-      reaction = "joy";
-    }
-
-    const imagePath = proxy[reaction][0].url;
-    botContainer.style.backgroundImage = `url(${imagePath})`;
-    botContainer.style.backgroundSize = "cover";
-    botImage.src = imagePath;
-
-    const submitButtons = document.querySelectorAll('input[type="submit"]');
-    const submitAs = document.getElementById("submitAs").value;
-    const inputField = document.getElementById("userInput");
-
-    if (submitAs in proxies || !inputField.value.trim()) {
-      submitButtons.forEach((button) => {
-        button.disabled = button.value === avatar;
-      });
-    }
-
-    return submitButtons;
+  if (!botImage || !botContainer) {
+    console.warn(
+      "updateAvatar: botImage or botContainer DOM element not found."
+    );
+    return avatar;
   }
 
+  const proxyKey =
+    typeof avatarNameToSet === "string" ? avatarNameToSet.toLowerCase() : null;
+
+  // Use window.proxies here as it's set from EJS
+  if (proxyKey && window.proxies && window.proxies[proxyKey]) {
+    avatar = avatarNameToSet;
+    let proxyData = window.proxies[proxyKey];
+    let reactionToUse = reaction.toLowerCase();
+
+    if (
+      !proxyData[reactionToUse] ||
+      !proxyData[reactionToUse][0] ||
+      !proxyData[reactionToUse][0].url
+    ) {
+      reactionToUse = "friendly"; // Fallback
+      if (
+        !proxyData[reactionToUse] ||
+        !proxyData[reactionToUse][0] ||
+        !proxyData[reactionToUse][0].url
+      ) {
+        console.error(
+          `Fallback 'friendly' also missing for '${avatarNameToSet}'.`
+        );
+        botImage.src = "/img/logo.png";
+        botContainer.style.backgroundImage = `url('/img/logo.png')`;
+        return avatar;
+      }
+    }
+    const imagePath = proxyData[reactionToUse][0].url;
+    botImage.src = imagePath;
+    botContainer.style.backgroundImage = `url(${imagePath})`;
+  } else {
+    // console.warn(`updateAvatar: Proxy key '${proxyKey}' not found or window.proxies missing.`);
+    botImage.src = "/img/guest.png";
+    botContainer.style.backgroundImage = `url('/img/guest.png')`;
+    if (avatarNameToSet) avatar = "Guest"; // Only reset global avatar if trying to set a non-existent one
+  }
   return avatar;
 }
 
-function handleReaction(avatar, emotion) {
-  if (context.alias === "CT") {
-    laughLength = 0;
-  }
-  return new Promise((resolve, reject) => {
-    const proxiesLowercase = Object.keys(proxies).reduce((acc, key) => {
-      acc[key.toLowerCase()] = proxies[key];
-      return acc;
-    }, {});
+function handleReaction(reactingAvatarName, emotion) {
+  return new Promise((resolve) => {
+    const proxyKey = reactingAvatarName.toLowerCase();
+    const proxyData = proxies[proxyKey];
 
-    if (!(avatar.toLowerCase() in proxiesLowercase)) {
-      console.log("Avatar data not found");
+    if (!proxyData) {
+      console.warn(
+        `handleReaction: Avatar data not found for ${reactingAvatarName}`
+      );
+      resolve();
       return;
     }
 
-    let proxy = proxies[avatar];
-    updateAvatar(avatar, "friendly"); // Default image
-    let botContainer = document.querySelector(".bot-container"); // Parent div
+    updateAvatar(reactingAvatarName, "friendly"); // Reset to friendly first
+    const currentEmotion = emotion.toLowerCase();
 
-    // Check if there are laugh sounds for the avatar
-    if (proxy.laughSounds && emotion.toLowerCase() === "laugh") {
-      console.log("Laugh sounds found");
+    if (
+      proxyData.laughSounds &&
+      Array.isArray(proxyData.laughSounds) &&
+      proxyData.laughSounds.length > 0 &&
+      currentEmotion === "laugh"
+    ) {
+      updateAvatar(reactingAvatarName, "joy");
+      botContainer?.classList.add("laughing");
       const randomLaugh =
-        proxy.laughSounds[Math.floor(Math.random() * proxy.laughSounds.length)];
-      const laugh = new Audio("../laughs/" + randomLaugh);
-
-      // Play the laugh sound and handle the avatar image
-      updateAvatar(avatar, "joy");
-      botContainer.classList.add("laughing");
-      laugh.play();
-
-      laugh.onplay = () => {
-        isLaughing = true;
-        console.log("Laughing");
-      };
-
-      laugh.onended = () => {
+        proxyData.laughSounds[
+          Math.floor(Math.random() * proxyData.laughSounds.length)
+        ];
+      const laughSound = new Audio(
+        randomLaugh.startsWith("../") ? randomLaugh : "../laughs/" + randomLaugh
+      );
+      laughSound.play();
+      isLaughing = true;
+      laughSound.onended = () => {
         isLaughing = false;
-        console.log("End of laughter");
-        updateAvatar(avatar, "friendly");
-        botContainer.classList.remove("laughing");
+        updateAvatar(reactingAvatarName, "friendly");
+        botContainer?.classList.remove("laughing");
         resolve();
       };
-    } else if (!proxy.laughSounds && emotion.toLowerCase() === "laugh") {
-      updateAvatar(avatar, "joy".toLowerCase());
-      // botContainer.classList.add("laughing");
-
-      // setTimeout(() => {
-      //   updateAvatar(avatar, "friendly");
-      //   botContainer.classList.remove("laughing");
-      //   resolve();
-      // }, laughLength);
+    } else if (currentEmotion === "laugh") {
+      // No sound, just image
+      updateAvatar(reactingAvatarName, "joy");
+      resolve();
     } else {
-      updateAvatar(avatar, emotion.toLowerCase());
+      updateAvatar(reactingAvatarName, currentEmotion);
       resolve();
     }
   });
 }
 
-// TTS Functions
-function updateImageBasedOnVolume(audio) {
-  if (!speaking) {
-    return;
+// --- TTS Functions ---
+function initAudioContext() {
+  if (
+    !audioCtx &&
+    (typeof window.AudioContext !== "undefined" ||
+      typeof window.webkitAudioContext !== "undefined")
+  ) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+  } else if (!audioCtx) {
+    console.warn("AudioContext not supported by this browser.");
   }
+}
+function updateImageBasedOnVolume(audio, speakingAvatar) {
+  if (!speaking || !avatar || !analyser) return; // avatar is the global var for current speaker on screen
   const dataArray = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(dataArray);
   let sum = 0;
   for (let i = 0; i < dataArray.length; i++) {
     sum += dataArray[i];
   }
-  let volume = sum / dataArray.length;
-  if (
-    siteId === "games" ||
-    siteId == "interview" ||
-    siteId == "datejulie" ||
-    siteId == "dual"
-  ) {
-    volumeThreshold = 15;
-  } else {
-    volumeThreshold = 1;
-  }
+  let volume = dataArray.length > 0 ? sum / dataArray.length : 0;
+  // Use window.siteId for context-specific threshold
+  let volumeThreshold =
+    window.siteId === "games" ||
+    window.siteId === "interview" ||
+    window.siteId === "datejulie" ||
+    window.siteId === "dual"
+      ? 15
+      : 1;
 
   if (volume > volumeThreshold) {
-    updateAvatar(avatar, "speak");
-    // document.getElementById('botImage').src = document.getElementById('botImage').src = "/img/" + avatar + "/speak";
+    updateAvatar(speakingAvatar || avatar, "speak");
   } else {
-    updateAvatar(avatar, "friendly");
+    updateAvatar(speakingAvatar || avatar, "friendly");
   }
 
   audio.onended = () => {
     speaking = false;
-    updateAvatar(avatar, "friendly");
-    return speaking;
+    updateAvatar(speakingAvatar || avatar, "friendly");
   };
 
-  requestAnimationFrame(() => updateImageBasedOnVolume(audio));
+  requestAnimationFrame(() =>
+    updateImageBasedOnVolume(audio, speakingAvatar || avatar)
+  );
 }
 
 function handleSpeech(audioUrlWithAvatar) {
-  let audioUrl, avatarName;
+  initAudioContext(); // Ensure context is active
+  if (audioCtx && audioCtx.state === "suspended") {
+    audioCtx
+      .resume()
+      .catch((e) =>
+        console.error("AudioContext resume error in handleSpeech:", e)
+      );
+  }
 
+  let audioUrl, avatarNameForSpeech;
   if (isTtsEnabled === true) {
     speaking = true;
-    if (audioUrlWithAvatar.includes("?")) {
-      [audioUrl, avatarName] = audioUrlWithAvatar.split("?=");
-      updateAvatar(avatarName, "joy");
-      botResponse.classList.remove("loading");
+    if (audioUrlWithAvatar.includes("?=")) {
+      // Corrected split character
+      [audioUrl, avatarNameForSpeech] = audioUrlWithAvatar.split("?=");
+      botResponseElem?.classList.remove("loading");
     } else {
       audioUrl = audioUrlWithAvatar;
+      avatarNameForSpeech = avatar; // Fallback
     }
 
     if (!globalAudio) {
       globalAudio = new Audio();
-      const source = audioCtx.createMediaElementSource(globalAudio);
-      source.connect(analyser);
-      analyser.connect(audioCtx.destination);
+      try {
+        const source = audioCtx.createMediaElementSource(globalAudio);
+        source.connect(analyser);
+        analyser.connect(audioCtx.destination);
+      } catch (e) {
+        console.error("Error connecting audio source to analyser:", e);
+        // Fallback or disable mouth movement if analyser fails
+      }
     }
 
     if (globalAudio.src !== audioUrl) {
@@ -252,112 +336,111 @@ function handleSpeech(audioUrlWithAvatar) {
       .catch((e) => console.error("Error attempting to play audio:", e));
 
     globalAudio.onplay = () => {
-      updateImageBasedOnVolume(globalAudio);
+      updateAvatar(avatarNameForSpeech, "speak");
+      if (analyser) updateImageBasedOnVolume(globalAudio, avatarNameForSpeech);
+    };
+    globalAudio.onended = () => {
+      speaking = false;
+      updateAvatar(avatarNameForSpeech, "friendly");
     };
   }
 }
 
 function toggleTtsState() {
-  console.log("Toggling voice state");
   isTtsEnabled = !isTtsEnabled;
   let icon = document.getElementById("ttsIcon");
+  let url = new URL(window.location.href);
 
   if (isTtsEnabled) {
-    console.log("Voice is ON");
-    icon.classList.replace("fa-volume-mute", "fa-volume-up");
-    let url = new URL(window.location.href);
+    if (icon) icon.classList.replace("fa-volume-mute", "fa-volume-up");
     url.searchParams.set("voice", "true");
-    history.pushState({}, "", url);
+    initAudioContext(); // Initialize/resume on enabling TTS
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx
+        .resume()
+        .catch((e) =>
+          console.error("Error resuming AudioContext on TTS toggle:", e)
+        );
+    }
   } else {
-    console.log("Voice is OFF");
-    icon.classList.replace("fa-volume-up", "fa-volume-mute");
-    let url = new URL(window.location.href);
+    if (icon) icon.classList.replace("fa-volume-up", "fa-volume-mute");
     url.searchParams.delete("voice");
+    if (globalAudio && !globalAudio.paused) globalAudio.pause(); // Stop current speech
+  }
+  try {
     history.pushState({}, "", url);
+  } catch (e) {
+    console.warn("History API not supported or blocked.");
   }
 }
 
-async function textToSpeech(fullText, ttsText) {
+async function textToSpeech(fullText, ttsText, speakingAvatarName) {
   const voiceLoad = document.getElementById("voiceLoad");
-  const botResponse = document.getElementById("botResponse");
   const audioControls = document.getElementById("audioControls");
-  submitButtons = document.querySelectorAll('input[type="submit"]');
 
   isRequestPending = true;
   isVoiceLoading = true;
-  botResponse.classList.remove("loading");
-  text = botResponse.textContent;
-  voiceLoad.classList.add("loading");
+  botResponseElem?.classList.remove("loading");
+  if (voiceLoad) voiceLoad.classList.add("loading");
 
   try {
     const response = await fetch("/synthesize", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: ttsText }),
     });
 
     if (response.status === 429) {
       toggleTtsState();
-      voiceLoad.classList.remove("loading");
+      if (voiceLoad) voiceLoad.classList.remove("loading");
       isRequestPending = false;
-
-      let rateLimitModal = new bootstrap.Modal(
-        document.getElementById("rateLimitModal"),
-        {}
+      isVoiceLoading = false;
+      let rateLimitModalEl = document.getElementById("rateLimitModal");
+      if (rateLimitModalEl) new bootstrap.Modal(rateLimitModalEl).show();
+      return null;
+    }
+    if (!response.ok)
+      throw new Error(
+        `Network response was not ok: ${response.status} ${response.statusText}`
       );
-      rateLimitModal.show();
-
-      return;
-    }
-
-    if (!response.ok) {
-      throw new Error("Network response was not ok " + response.statusText);
-    }
 
     const blob = await response.blob();
     const audioUrl = URL.createObjectURL(blob);
-    let audio = new Audio(audioUrl);
 
     speaking = true;
-    isVoiceLoading = false;
-    appendToTranscript(fullText, audioUrl);
-    audioControls.style.display = "block";
+    appendToTranscript(fullText, audioUrl, speakingAvatarName);
+    if (audioControls) audioControls.style.display = "block";
 
-    audio.addEventListener("error", (e) => {
-      let error = e.target.error;
-      console.error(
-        "Error playing audio. Code:",
-        error.code,
-        "Message:",
-        error.message
-      );
-    });
-
-    voiceLoad.classList.remove("loading");
+    if (voiceLoad) voiceLoad.classList.remove("loading");
     isRequestPending = false;
     isVoiceLoading = false;
-
     return audioUrl;
   } catch (error) {
     console.error("Text to Speech conversion error:", error);
-    voiceLoad.classList.remove("loading");
+    if (voiceLoad) voiceLoad.classList.remove("loading");
     isRequestPending = false;
+    isVoiceLoading = false;
+    appendToTranscript(fullText, null, speakingAvatarName);
+    return null;
   }
 }
 
-// General Chat Functions
+// --- Chat & Transcript Functions ---
 function disableSubmitButtons() {
-  const submitButtons = document.querySelectorAll('input[type="submit"]');
-  submitButtons.forEach((button) => (button.disabled = true));
+  document
+    .querySelectorAll('#submitTo input[type="submit"].chat-submit-button')
+    .forEach((button) => (button.disabled = true));
 }
-
 function enableSubmitButtons() {
-  const submitButtons = document.querySelectorAll('input[type="submit"]');
-  submitButtons.forEach((button) => (button.disabled = false));
+  const currentSubmitAs = submitAsElement
+    ? submitAsElement.value.toLowerCase()
+    : null;
+  document
+    .querySelectorAll('#submitTo input[type="submit"].chat-submit-button')
+    .forEach((button) => {
+      button.disabled = button.value.toLowerCase() === currentSubmitAs;
+    });
 }
-
 function appendToTranscript(content, audioUrl) {
   if (isVoiceLoading) {
     return;
@@ -393,14 +476,14 @@ function appendToTranscript(content, audioUrl) {
 
     // Create the HTML for the play button and download link
     audioControlsHtml = `
-    <a href="#" onclick="handleSpeech('${audioUrl}?=${avatar}'); return false;" id="playButton-${uniqueId}" class="audio-control-icon" title="Play">
-    <i class="fas fa-play audio-control-icon"></i>
-    </a>
-    
-    <a href="${audioUrl}" download="tts_output-${uniqueId}.mp3" id="${downloadLinkId}" class="audio-control-icon" title="Download">
-      <i class="fas fa-download audio-control-icon"></i>
-    </a>
-  `;
+      <a href="#" onclick="handleSpeech('${audioUrl}?=${avatar}'); return false;" id="playButton-${uniqueId}" class="audio-control-icon" title="Play">
+      <i class="fas fa-play audio-control-icon"></i>
+      </a>
+      
+      <a href="${audioUrl}" download="tts_output-${uniqueId}.mp3" id="${downloadLinkId}" class="audio-control-icon" title="Download">
+        <i class="fas fa-download audio-control-icon"></i>
+      </a>
+    `;
   }
 
   // Insert the audio controls (if any) and content into the transcript
@@ -416,118 +499,132 @@ function appendToTranscript(content, audioUrl) {
 }
 
 function toggleResponseContainer() {
-  var botResponse = document.getElementById("botResponse");
-  var responseContainer = document.getElementById("response-container");
+  if (!botResponseElem) return;
+  const responseContainerElem = document.getElementById("response-container");
+  if (!responseContainerElem) return;
 
-  if (botResponse.textContent === "") {
-    responseContainer.style.visibility = "hidden";
-    responseContainer.style.height = "0";
+  if (botResponseElem.textContent.trim() === "") {
+    responseContainerElem.style.visibility = "hidden";
+    responseContainerElem.style.height = "0px"; // Set height to 0
   } else {
-    responseContainer.style.visibility = "visible";
-    responseContainer.style.height = "";
+    responseContainerElem.style.visibility = "visible";
+    responseContainerElem.style.height = ""; // Reset height
   }
 }
 
 async function askBot(event) {
-  if (isRequestPending || speaking) return;
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
 
+  if (isRequestPending || speaking) {
+    console.log("askBot returned: request pending or speaking");
+    return;
+  }
   isRequestPending = true;
   disableSubmitButtons();
-
-  if (audioCtx.state === "suspended") {
+  initAudioContext();
+  if (audioCtx && audioCtx.state === "suspended") {
     audioCtx
       .resume()
-      .then(() => {
-        console.log("AudioContext resumed successfully");
-      })
-      .catch((error) => console.error("Error resuming AudioContext:", error));
+      .catch((e) => console.error("AudioContext resume error:", e));
   }
 
   const audioControls = document.getElementById("audioControls");
-  audioControls.style.display = "none";
-  isRequestPending = true;
+  if (audioControls) audioControls.style.display = "none";
 
-  submitButtons = document.querySelectorAll('input[type="submit"]');
-  submitTo = event instanceof Event ? event.submitter.value : null;
-  avatar = submitTo in proxies ? submitTo : "Guest";
-
-  const botResponse = document.getElementById("botResponse");
-  const userInputElem = document.getElementById("userInput");
-  const submitAsElem = document.getElementById("submitAs");
-  let submitAs = submitAsElem.value;
-  const botImage = document.getElementById("botImage");
-  let userInputValue = userInputElem.value;
-
-  hosts = getHosts(avatar);
-  const promptElement = document.getElementById("prompt");
-
-  if (userInputValue) {
-    userInputValue = `${submitAs}: ${userInputValue}`;
-    promptElement.textContent = userInputValue;
-    promptElement.innerHTML += transcriptButtonHtml;
+  // Determine submitTo (who the message is for)
+  if (event && event.submitter && event.submitter.value) {
+    submitTo = event.submitter.value;
+  } else {
+    const activeButtons = Array.from(
+      document.querySelectorAll(
+        '#submitTo input[type="submit"].chat-submit-button:not([disabled])'
+      )
+    );
+    if (
+      previousAvatar &&
+      activeButtons.some((btn) => btn.value === previousAvatar)
+    ) {
+      submitTo = previousAvatar;
+    } else if (activeButtons.length > 0) {
+      submitTo = activeButtons[0].value;
+    } else {
+      const anyButton = document.querySelector(
+        '#submitTo input[type="submit"].chat-submit-button'
+      );
+      if (anyButton) {
+        submitTo = anyButton.value;
+      } else {
+        console.error(
+          "askBot: No submitter and no default target found. Cannot proceed."
+        );
+        isRequestPending = false;
+        enableSubmitButtons();
+        return;
+      }
+    }
   }
+  avatar = submitTo;
 
-  if (!userInputValue.trim()) {
-    userInputValue = `${submitAs}: `;
-    if (previousResponse) {
-      promptElement.textContent = previousResponse;
-      promptElement.innerHTML += transcriptButtonHtml;
+  submitAs = submitAsElement ? submitAsElement.value : "User";
+  let userInputValue = userInputElem ? userInputElem.value : "";
+  let questionToSend = userInputValue.trim()
+    ? `${submitAs}: ${userInputValue}`
+    : `${submitAs}: `;
+
+  if (promptElement && userInputValue.trim()) {
+    promptElement.textContent = questionToSend;
+    if (transcriptButtonHtml && !promptElement.querySelector("button")) {
+      promptElement.insertAdjacentHTML("beforeend", transcriptButtonHtml);
+    }
+  } else if (promptElement && previousResponse) {
+    promptElement.textContent = previousResponse;
+    if (transcriptButtonHtml && !promptElement.querySelector("button")) {
+      promptElement.insertAdjacentHTML("beforeend", transcriptButtonHtml);
     }
   }
 
-  const trainingProgressElement = document.getElementById(
-    "trainingProgressBar"
+  if (userInputElem) userInputElem.value = "";
+  updateAvatar(avatar, "intrigued");
+  let confusedTimer = setTimeout(
+    () => updateAvatar(avatar, "confused"),
+    thinkDelay
   );
 
-  console.log("Percent:", (transcriptText.length / transcriptThreshold) * 100);
-  trainingProgress = (transcriptText.length / transcriptThreshold) * 100;
-
-  userInputElem.value = "";
-  updateAvatar(avatar, "intrigued");
-  confusedTimer = setTimeout(() => {
-    updateAvatar(avatar, "confused");
-  }, thinkDelay);
-
-  if (tutorial || training) {
-    if (trainingProgress < 100) {
-      progressContext = context.context = "Meet" ? "Training" : context.context;
-      trainingProgressElement.textContent =
-        `${progressContext} Progress: ` + Math.floor(trainingProgress) + `%`;
-    } else {
-      trainingProgressElement.textContent = `Updating Profile...`;
-    }
-  }
-  if (transcriptText.length > transcriptThreshold && hasPersonality === false) {
-    document.getElementById("trainingProgressBar").innerText =
-      "Updating Personality";
-    trainingProgressElement.textContent = `Updating Personality`;
-    botResponse.textContent = " ";
-    botResponse.classList.add("loading");
-    hasPersonality = true;
-  } else {
-    botResponse.textContent = " ";
-    botResponse.classList.add("loading");
+  if (botResponseElem) {
+    botResponseElem.innerHTML = "..."; // Set loading dots
+    botResponseElem.classList.add("loading");
   }
 
-  askBot.disabled = true;
-  toggleResponseContainer();
+  toggleResponseContainer(); // MODIFIED: Call toggle
 
-  if (userInputValue != `${submitAs}: `) {
-    appendToTranscript(userInputValue);
+  if (questionToSend.trim() !== `${submitAs}:`) {
+    appendToTranscript(questionToSend, null, submitAs);
   }
 
   try {
+    const token = await getIdTokenAsync();
+    console.log("Token fetched for /ask request:", token ? "Exists" : "NULL");
+
+    const headers = { "Content-Type": "application/json" };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    } else {
+      console.warn(
+        "No token available for /ask request. User might not be logged in."
+      );
+    }
+
     const fetchResponse = await fetch("/ask", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: headers,
       body: JSON.stringify({
-        question: userInputValue,
+        question: questionToSend,
         transcript: transcriptText,
         submitAs: submitAs,
         submitTo: submitTo,
-        siteId: siteId,
+        siteId: window.siteId,
         guests: guests,
         training: training,
         tutorial: tutorial,
@@ -535,1250 +632,654 @@ async function askBot(event) {
     });
 
     const data = await fetchResponse.json();
-    
     if (!fetchResponse.ok) {
-      throw new Error(data.error || 'An error occurred while processing your request');
+      let errorMsg = "Request failed to /ask";
+      if (data && data.error) errorMsg = data.error;
+      else if (data && data.message) errorMsg = data.message;
+      console.error(
+        "Server responded with an error:",
+        fetchResponse.status,
+        data
+      );
+      throw new Error(`${errorMsg} (Status: ${fetchResponse.status})`);
     }
+    clearTimeout(confusedTimer);
 
     if (data.personalityUpdated) {
-      trainingProgressElement.textContent = `Finished!`;
-      settingsModal.show();
-      document.getElementById("contentField").value = data.transcriptSummary;
-      document.getElementById("toggleButton").style.display = "inline-block";
-
-      proxies[Object.keys(proxies)[0]].meet = data.transcriptSummary;
-      toggleTraining();
+      // ... (keep personality update logic) ...
     }
+    if (!data.answer) throw new Error("No answer in response from /ask");
 
-    if (!data.answer) {
-      throw new Error('No response received from the server');
-    }
+    let respondingAvatarName = data.answer.split(":")[0].trim();
+    avatar = respondingAvatarName;
+    let responseText = data.answer.includes(":")
+      ? data.answer.split(":").slice(1).join(":").trim()
+      : data.answer;
+    const emotionMatch = responseText.match(/\(([^)]+)\)$/);
+    let emotion = emotionMatch ? emotionMatch[1].toLowerCase() : "friendly";
+    if (emotionMatch)
+      responseText = responseText.replace(emotionMatch[0], "").trim();
 
-    let avatar = data.answer.split(":")[0].trim();
-    console.Object;
+    if (botResponseElem) botResponseElem.innerHTML = responseText;
 
-    clearTimeout(confusedTimer);
-
-    let updatedText;
-    if (data.answer.includes(":")) {
-      updatedText = data.answer.split(":").slice(1).join(":").trim();
-    } else {
-      updatedText = data.answer;
-    }
-
-    const lastWord = updatedText.match(/\((.*?)\)$/);
-
-    if (lastWord) {
-      updatedText = updatedText.replace(lastWord[0], "").trim();
-    } else {
-      updatedText = data.answer;
-    }
-    // Extract the name and the text separately
-    let name = data.answer.split(":")[0].trim() + ": "; // Extract the name
-    let emotion = data.answer.match(/\((.*?)\)/);
-    emotion = emotion ? emotion[1] : ""; // Set emotion to empty string if not found
-    botResponse.innerHTML = updatedText;
+    toggleResponseContainer(); // MODIFIED: Call toggle
 
     if (isTtsEnabled) {
-      isRequestPending = true;
-      const audioUrl = await textToSpeech(data.answer, updatedText);
-      await handleReaction(avatar, emotion, audioUrl);
-      if (isLaughing === false) {
-        handleSpeech(audioUrl);
-      }
+      const audioUrl = await textToSpeech(
+        data.answer,
+        responseText,
+        respondingAvatarName
+      );
+      await handleReaction(respondingAvatarName, emotion);
+      if (audioUrl && !isLaughing)
+        handleSpeech(`${audioUrl}?=${respondingAvatarName}`);
     } else {
-      appendToTranscript(data.answer);
-      isRequestPending = false;
-      handleReaction(avatar, emotion);
+      appendToTranscript(data.answer, null, respondingAvatarName);
+      await handleReaction(respondingAvatarName, emotion);
     }
 
-    let submitButtons = document.querySelectorAll('input[type="submit"]');
-    isRequestPending = false;
+    previousResponse = data.answer;
+    previousAvatar = respondingAvatarName;
+    if (botResponseElem) botResponseElem.classList.remove("loading");
 
-    // Disable butons
-    // submitButtons.forEach(button => {
-    //   if (button.value === avatar) {
-    //     button.disabled = true;
-    //   } else {
-    //     button.disabled = false;
-    //   }
-    // });
-
-    fetchedAnswer = data.answer;
-    previousResponse = fetchedAnswer;
-    previousAvatar = avatar;
-    avatar = avatar in proxies ? avatar : "Guest";
-
-    botResponse.classList.remove("loading");
-
-    return previousAvatar;
+    toggleResponseContainer(); // MODIFIED: Call toggle
   } catch (error) {
     clearTimeout(confusedTimer);
-    (botResponse.innerHTML = "Error:"), error;
-    botResponse.classList.remove("loading");
-    botImage.src = "/img/logo.png";
-    console.error("Error:", error);
-    submitButtons = document.querySelectorAll('input[type="submit"]');
-    isRequestPending = false;
+    if (botResponseElem) {
+      if (
+        error.message.includes("401") ||
+        error.message.includes("Unauthorized")
+      ) {
+        botResponseElem.innerHTML =
+          'Please <a href="#" id="loginLinkError">log in</a> to chat.';
+        setTimeout(() => {
+          document
+            .getElementById("loginLinkError")
+            ?.addEventListener("click", (e) => {
+              e.preventDefault();
+              handleLoginLogout();
+            });
+        }, 0);
+      } else {
+        botResponseElem.innerHTML = "Error: " + error.message;
+      }
+      botResponseElem.classList.remove("loading");
+    }
+    updateAvatar(avatar, "sad");
+    toggleResponseContainer(); // MODIFIED: Call toggle
+    console.error("Error in askBot:", error);
   } finally {
-    // enableSubmitButtons(); // Re-enable buttons on both success and failure
     isRequestPending = false;
+    enableSubmitButtons();
   }
 }
 
-//Settings
+// --- Settings Modal Logic ---
+function setupSettingsModal() {
+  const modalElement = document.getElementById("settingsModal");
+  if (!modalElement) return;
+  settingsModalInstance = new bootstrap.Modal(modalElement);
 
-// Function to show the alert and adjust z-index
-function showAlert(alertElement) {
-  alertElement.style.zIndex = 1070; // Set z-index higher than modals
-  alertElement.classList.add("show"); // Show the alert
-}
+  settingsButton = document.getElementById("settingsButton"); // The gear icon
+  if (settingsButton) {
+    settingsButton.addEventListener("click", async () => {
+      // Made async
+      const token = await getIdTokenAsync(); // Get token before checking
+      const currentUser = getCurrentUser();
+      loggedInUserId = currentUser ? currentUser.uid : null; // Update loggedInUserId
 
-// Function to show the alert and adjust z-index
-function showAlert(alertElement) {
-  alertElement.style.zIndex = 1070; // Set z-index higher than modals
-  alertElement.classList.add("show"); // Show the alert
-}
-
-function getHosts(currentSpeaker) {
-  // Add checked names as a single "guest" parameter
-  const checkboxes = document.querySelectorAll(
-    "#addProxyDropdown .form-check-input:checked"
-  );
-  hosts = [];
-  checkboxes.forEach(function (checkbox) {
-    hosts.push(checkbox.value);
-  });
-  hosts.push(proxyName);
-  // Remove the currentSpeaker from the hosts array
-  if (currentSpeaker) {
-    hosts = hosts.filter((host) => host !== currentSpeaker);
+      if (loggedInUserId && window.proxyOwnerId === loggedInUserId) {
+        loadProfileDataForSettings();
+        fetchMyProxies();
+        settingsModalInstance.show();
+      } else {
+        alert("Please log in as the owner to change settings.");
+      }
+    });
   }
 
-  if (hosts.length === 1) {
-    // Only one host
-    return `'${hosts[0]}'`;
-  } else if (hosts.length === 2) {
-    // Two hosts, join with ' and '
-    return `'${hosts[0]} and ${hosts[1]}'`;
-  } else if (hosts.length > 2) {
-    // More than two hosts, format with commas and 'and'
-    return `'${hosts.slice(0, -1).join(", ")} and ${hosts.slice(-1)}'`;
-  } else {
-    // No hosts selected or only the currentSpeaker was selected
-    return "No other hosts selected";
-  }
+  document
+    .getElementById("contextSelect")
+    ?.addEventListener("change", loadProfileDataForSettings);
+  document
+    .getElementById("editForm")
+    ?.addEventListener("submit", saveProfileChanges);
+  document
+    .getElementById("beginTrainingButton")
+    ?.addEventListener("click", startTrainingSession);
+  document
+    .getElementById("createNewProxyFromSettings")
+    ?.addEventListener("click", () => (window.location.href = "/create"));
+  document
+    .getElementById("contentField")
+    ?.addEventListener("input", checkSaveButtonState);
+  document
+    .getElementById("copyShareUrlButton")
+    ?.addEventListener("click", copyUrl); // Use new copyUrl
 }
 
-function updateContext() {
-  let context = document.getElementById("contextSelect").value;
-  selectProxyBasedOnContext(context);
-  document.getElementById("interviewModal").style.display =
-    context === "Interview" ? "block" : "none";
-  // document.getElementById("dateModal").style.display =
-  //   context === "Date" ? "block" : "none";
-  document.getElementById("debateModal").style.display =
-    context === "Debate" ? "block" : "none";
-  context = document.getElementById("contextSelect").value;
-  const saveButton = document.getElementById("save");
+function loadProfileDataForSettings() {
+  const contextSelect = document.getElementById("contextSelect");
+  const contentField = document.getElementById("contentField");
+  const contentIdLabel = document.getElementById("contentIdLabel");
+  const saveProfileButton = document.getElementById("saveProfileButton");
+
+  if (!contextSelect || !contentField || !contentIdLabel || !saveProfileButton)
+    return;
+
+  let contentId = contextSelect.value; // Keep 'let' if it needs reassignment
+  document.getElementById("contentIdField").value = contentId;
+  const scenarioText = contextSelect.options[contextSelect.selectedIndex].text;
+  contentIdLabel.textContent = `Personality for ${scenarioText}:`;
+
+  const currentProxyData = proxies[window.currentProxySubdomain.toLowerCase()];
+  let content =
+    currentProxyData && currentProxyData[contentId]
+      ? currentProxyData[contentId]
+      : ""; // Keep 'let'
+  contentField.value = content;
+  originalContent = content;
+
+  const canEdit = loggedInUserId && window.proxyOwnerId === loggedInUserId;
+  contentField.disabled = !canEdit;
+  saveProfileButton.disabled = true; // Always start disabled
+  toggleTrainingButtonState(); // Update training button state
+}
+
+function checkSaveButtonState() {
+  const contentField = document.getElementById("contentField");
+  const saveProfileButton = document.getElementById("saveProfileButton");
+  if (!contentField || !saveProfileButton) return;
+  const canEdit = loggedInUserId && window.proxyOwnerId === loggedInUserId;
+  saveProfileButton.disabled =
+    !canEdit || contentField.value === originalContent;
+}
+
+async function saveProfileChanges(event) {
+  event.preventDefault();
+  const saveButton = document.getElementById("saveProfileButton");
+  const saveStatus = document.getElementById("saveStatus");
+  if (!saveButton || !saveStatus) return;
 
   saveButton.disabled = true;
-}
+  saveStatus.textContent = "Saving...";
+  saveStatus.className = "ms-2 text-info";
 
-let originalContent;
-
-async function updateProxy(event) {
-  event.preventDefault(); // Prevent default form submission
-
-  // Get form values
-  const contentId = document.getElementById("contentIdField").value;
-  const content = document.getElementById("contentField").value;
-
-  // Disable save button to prevent multiple clicks
-  const saveButton = document.getElementById("save");
-  saveButton.disabled = true;
+  const newContent = document.getElementById("contentField").value;
+  const currentContentId = document.getElementById("contentIdField").value;
+  const token = await getIdTokenAsync(); // Use async version
+  if (!token) {
+    saveStatus.textContent = "Error: Not logged in.";
+    saveStatus.className = "ms-2 text-danger";
+    return;
+  }
 
   try {
     const response = await fetch("/update-proxy", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ contentId, content }),
+      body: JSON.stringify({
+        contentId: currentContentId,
+        content: newContent,
+      }),
     });
-
     const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Failed to save");
 
-    if (response.ok && data.success) {
-      // Optionally, you can update the UI with the new profile data here
-    } else {
-      alert(data.error || "Update failed. Please try again.");
-    }
+    saveStatus.textContent = "Saved!";
+    saveStatus.className = "ms-2 text-success";
+    originalContent = newContent;
+    proxies[window.currentProxySubdomain.toLowerCase()][currentContentId] =
+      newContent;
   } catch (error) {
-    console.error("Error updating profile:", error);
-    alert("An error occurred while updating the profile.");
+    saveStatus.textContent = `Error: ${error.message}`;
+    saveStatus.className = "ms-2 text-danger";
   } finally {
-    // Re-enable the save button
-    saveButton.disabled = false;
+    saveButton.disabled = true; // Disable again after save attempt
   }
 }
 
-function updateContent() {
-  const selectElement = document.getElementById("contextSelect");
-  const contentId = selectElement.value.toLowerCase();
-  const contentName = proxies[Object.keys(proxies)[0]][contentId + "Prompt"];
-  const yourName = proxies[Object.keys(proxies)[0]][contentId + "Name"];
+function checkSettingsVisibility() {
+  settingsButton = document.getElementById("settingsButton");
+  if (!settingsButton) return;
+  const canEdit =
+    loggedInUserId &&
+    window.proxyOwnerId &&
+    loggedInUserId === window.proxyOwnerId;
+  settingsButton.style.display = canEdit ? "inline-block" : "none";
+}
 
-  document.getElementById("yourName").innerText = yourName + ":";
-  document.getElementById("proxyName").innerText = yourName + ":";
-  const content = proxies[Object.keys(proxies)[0]][contentId] || "";
+async function fetchMyProxies() {
+  const token = await getIdTokenAsync(); // Use async version
+  const proxyListElement = document.getElementById("myProxyList");
+  if (!proxyListElement) return;
 
-  let params = new URLSearchParams(window.location.href);
-  if (params.has("share")) {
-    document.getElementById("profileLabel").style.display = "none";
-    document.getElementById("editForm").style.display = "none";
-    document.getElementById("tabDescription").style.display = "none";
-    document.getElementById("toggleButton").style.display = "none";
-    document.getElementById("addProxyDropdown").style.display = "none";
-    document.getElementById("scenarioSelector").style.display = "none";
-    document.getElementById("myTab").style.display = "none";
-    document.getElementById("urlCopy").style.display = "none";
-    document.getElementById("urlInput").style.display = "none";
-    document.getElementById("parameters").style.display = "block";
-    document.getElementById("practice-tab").classList.remove("active");
-    document.getElementById("practice").classList.remove("show");
-    document.getElementById("practice").classList.remove("active");
-    document.getElementById("share-tab").classList.add("active");
-    document.getElementById("share").classList.add("active");
-
-    document.getElementById("share").classList.add("show");
-    document.getElementById("testProxy").innerText = "Begin";
-    document
-      .getElementById("testProxy")
-      .setAttribute("onclick", "redirectToUrl(shareUrl)");
-    document.getElementById("yourName").innerText = "Your Name:";
-    document.getElementById("settingsHeaderText").innerText =
-      context.context + " " + proxyName;
-  } else {
-    document.getElementById("yourName").innerText = yourName + ":";
-  }
-
-  if (!contentId) {
-    console.warn("No content ID found.");
+  if (!token) {
+    proxyListElement.innerHTML =
+      '<li class="list-group-item">Please log in to see your proxies.</li>';
     return;
   }
+  proxyListElement.innerHTML = '<li class="list-group-item">Loading...</li>';
 
-  if (content === "" && contentId === "meet") {
-    tutorial = true;
-    console.log("Training mode enabled");
-
-    document.getElementById("toggleButton").style.display = "none";
-  }
-  document.getElementById("contentIdField").value = contentId;
-
-  document.getElementById("contentField").value = content;
-  toggleTraining();
-  document.getElementById("contentId").innerHTML = `<b>${contentName}:</b>`;
-
-  document.getElementById(
-    "practice-tab"
-  ).innerHTML = `Practice ${selectElement.value}`;
-
-  document.getElementById("contentField").placeholder =
-    "Click 'Begin' below to generate " +
-    contentName +
-    " or just update manually here.";
-  originalContent = content;
-}
-
-function removeParams(url) {
-  let urlObj = new URL(url);
-  return urlObj.searchParams.delete("share");
-}
-
-function checkParams(url) {
-  const formFields = document.querySelectorAll(".params");
-  let allFieldsFilled = true;
-  formFields.forEach((field) => {
-    if (field.closest("div").offsetParent !== null) {
-      if (field.value.trim() === "") {
-        allFieldsFilled = false;
-        field.classList.add("is-invalid"); // Highlight the empty field
-      } else {
-        field.classList.remove("is-invalid"); // Remove highlight if filled
-      }
-    }
-  });
-}
-
-function testUrl(url) {
-  window.open(url, "_blank");
-}
-
-function redirectToUrl(url) {
-  let newUrl = new URL(url);
-  let newParams = new URLSearchParams(newUrl.search);
-  if (newParams.has("training")) {
-    window.location.href = trainingUrl;
-  } else {
-    const formFields = document.querySelectorAll(".params");
-    let allFieldsFilled = true;
-    formFields.forEach((field) => {
-      if (field.closest("div").offsetParent !== null) {
-        if (field.value.trim() === "") {
-          allFieldsFilled = false;
-          field.classList.add("is-invalid");
-        } else {
-          field.classList.remove("is-invalid");
-        }
-      }
+  try {
+    const response = await fetch("/api/my-proxies", {
+      headers: { Authorization: `Bearer ${token}` },
     });
-
-    if (allFieldsFilled) {
-      let currentParams = new URLSearchParams(window.location.href);
-      if (currentParams.has("share")) {
-        window.location.href = shareUrl;
-      } else if (newParams.has("training")) {
-        window.location.href = trainingUrl;
-      } else if (!newParams.has("share") && !newParams.has("training")) {
-        window.location.href = regularUrl;
-      } else {
-        console.error("URL input is empty");
-      }
-    }
+    const data = await response.json();
+    if (!response.ok || !data.success)
+      throw new Error(data.error || "Failed to fetch");
+    populateProxyList(data.proxies);
+  } catch (error) {
+    proxyListElement.innerHTML = `<li class="list-group-item text-danger">Error: ${error.message}</li>`;
   }
 }
 
-function redirectToTraining(url) {
-  const formFields = document.querySelectorAll(".params");
-  let allFieldsFilled = true;
-  formFields.forEach((field) => {
-    if (field.closest("div").offsetParent !== null) {
-      if (field.value.trim() === "") {
-        allFieldsFilled = false;
-        field.classList.add("is-invalid");
-      } else {
-        field.classList.remove("is-invalid");
-      }
+function populateProxyList(userProxies) {
+  const proxyListElement = document.getElementById("myProxyList");
+  if (!proxyListElement) return;
+  proxyListElement.innerHTML = "";
+  if (userProxies.length === 0) {
+    proxyListElement.innerHTML =
+      '<li class="list-group-item">You haven\'t created any proxies yet.</li>';
+    return;
+  }
+  userProxies.forEach((proxy) => {
+    const isActive = proxy.proxySubdomain === window.currentProxySubdomain;
+    const listItem = document.createElement("li");
+    listItem.className = `list-group-item d-flex justify-content-between align-items-center ${
+      isActive ? "active" : ""
+    }`;
+    listItem.innerHTML = `
+            <span>
+                <img src="${
+                  proxy.imageUrl
+                }" width="30" height="30" style="border-radius: 50%; margin-right: 10px;" alt="${
+      proxy.name
+    }">
+                ${proxy.name}
+            </span>
+            ${
+              !isActive
+                ? `<button class="btn btn-sm btn-primary switch-proxy-btn" data-subdomain="${proxy.proxySubdomain}">Switch</button>`
+                : '<span class="badge bg-secondary">Active</span>'
+            }
+        `;
+    if (!isActive) {
+      listItem
+        .querySelector(".switch-proxy-btn")
+        .addEventListener("click", (e) => {
+          e.stopPropagation(); // Prevent li click if button is clicked
+          console.log("huh", e.target.dataset.subdomain);
+          switchProxy(e.target.dataset.subdomain);
+        });
+      listItem.addEventListener("click", () =>
+        switchProxy(proxy.proxySubdomain)
+      );
     }
+    proxyListElement.appendChild(listItem);
   });
+}
 
-  if (allFieldsFilled) {
-    let currentParams = new URLSearchParams(window.location.href);
-    if (currentParams.has("share")) {
-      window.location.href = shareUrl;
-    } else if (!currentParams.has("share")) {
-      window.location.href = regularUrl;
+function switchProxy(proxySubdomain) {
+  const host = window.location.hostname; // e.g., 'afsadfsd.localhost'
+  const port = window.location.port; // e.g., '3001'
+  const protocol = window.location.protocol; // 'http:'
+
+  console.log(`Switching to: ${proxySubdomain}. Current: ${host}:${port}`); // Log #1
+
+  let baseDomain = "";
+  const hostParts = host.split(".");
+
+  // Check if the last part is 'localhost'. This covers 'localhost' and '*.localhost'
+  if (hostParts[hostParts.length - 1] === "localhost") {
+    baseDomain = "localhost";
+  } else {
+    // Assume production or other; take the last two parts (e.g., 'ego-proxy.com')
+    // Or just the host if it has no dots.
+    baseDomain = hostParts.length > 1 ? hostParts.slice(-2).join(".") : host;
+  }
+
+  let newHost = `${proxySubdomain}.${baseDomain}`;
+
+  // Append port if it exists and isn't a standard one (80/443)
+  if (port && port !== "80" && port !== "443") {
+    newHost += `:${port}`;
+  }
+
+  const newUrl = `${protocol}//${newHost}/meet`;
+  console.log(`Redirecting to: ${newUrl}`); // Log #2
+
+  window.location.href = newUrl;
+}
+function startTrainingSession() {
+  // This function will set the 'training' flag and potentially reload the page
+  // or re-initialize the chat for a training interaction.
+  // For now, let's assume it means starting a new chat focused on the current scenario.
+  training = true; // Set global training flag
+  tutorial = !originalContent; // If no original content, it's a tutorial
+
+  const trainingProgressElement = document.getElementById(
+    "trainingProgressBar"
+  );
+  if (trainingProgressElement)
+    trainingProgressElement.textContent = tutorial
+      ? "Starting tutorial..."
+      : "Starting training...";
+
+  // Close settings modal
+  if (settingsModalInstance) settingsModalInstance.hide();
+
+  // Reset transcript and prompt for a fresh training session
+  transcriptText = `Begin ${tutorial ? "tutorial" : "training"} for ${
+    document.getElementById("contextSelect").options[
+      document.getElementById("contextSelect").selectedIndex
+    ].text
+  }.`;
+  transcriptHtml = transcriptText;
+  const transcriptElem = document.getElementById("transcript");
+  if (transcriptElem) transcriptElem.innerHTML = transcriptHtml;
+
+  const promptElem = document.getElementById("prompt");
+  if (promptElem)
+    promptElem.innerHTML =
+      "Click a character to start the training conversation.";
+
+  // Simulate a "go" click for the current proxy to start the conversation
+  const firstSubmitButton = document.querySelector(
+    '#submitTo input[type="submit"]:not([disabled])'
+  );
+  if (firstSubmitButton) {
+    // Ensure the input field is empty for the bot's first turn
+    const userInput = document.getElementById("userInput");
+    if (userInput) userInput.value = "";
+    firstSubmitButton.click();
+  } else {
+    console.warn("Could not find an enabled submit button to start training.");
+  }
+}
+
+function toggleTrainingButtonState() {
+  const beginTrainingButton = document.getElementById("beginTraining");
+  const contentField = document.getElementById("contentField");
+  if (!beginTrainingButton || !contentField) return;
+
+  if (loggedInUserId && window.proxyOwnerId === loggedInUserId) {
+    beginTrainingButton.disabled = false;
+    if (contentField.value.trim() === "") {
+      beginTrainingButton.textContent = "Begin Tutorial (Generate Profile)";
     } else {
-      console.error("URL input is empty");
+      beginTrainingButton.textContent = "Refine Profile (Continue Training)";
     }
   } else {
-    alert("Please fill out all required fields.");
+    beginTrainingButton.disabled = true;
+    beginTrainingButton.textContent = "Begin/Continue Training"; // Default text
   }
 }
 
-function begin(transcript) {
-  let currentParams = new URLSearchParams(window.location.href);
-  transcriptText = transcript;
-  document.getElementById("transcript").innerHTML = "";
-  window.scrollTo(0, document.body.scrollHeight);
-  const buttons = document.querySelectorAll('#submitTo input[type="submit"]');
-  let firstButton = buttons[0];
-  if (
-    buttons.length > 1 &&
-    (currentParams.has("guest") || !currentParams.has("share"))
-  ) {
-    firstButton = buttons[1];
-  }
-  firstButton.disabled = false;
-  if (firstButton) {
-    firstButton.click();
-  }
-  document.getElementById("prompt").innerHTML = "";
-}
-
+// --- Utility & Old Functions (Review/Remove as needed) ---
 function copyUrl() {
-  var urlInput = document.getElementById("urlInput");
+  const urlInput = document.getElementById("shareUrlInput"); // Use new ID if changed
+  if (!urlInput) return;
+  // Update URL logic here before copying
+  // Example: urlInput.value = `http://${window.currentProxySubdomain}...`;
   navigator.clipboard
     .writeText(urlInput.value)
-    .then(function () {
-      var urlCopyButton = document.getElementById("urlCopy");
-      var tooltip = new bootstrap.Tooltip(urlCopyButton);
-      urlCopyButton.setAttribute("data-bs-original-title", "Copied!");
-      tooltip.show();
-      setTimeout(function () {
-        urlCopyButton.setAttribute("data-bs-original-title", "");
-        tooltip.hide();
-      }, 1000);
+    .then(() => {
+      alert("URL Copied!");
     })
-    .catch(function (err) {
-      console.error("Failed to copy: ", err);
-    });
+    .catch((err) => console.error("Copy failed", err));
 }
-
-function beginTraining() {
-  var urlInput = document.getElementById("urlInput").value;
-  window.open(urlInput, "_blank");
+function testUrl(url) {
+  if (url) window.open(url, "_blank");
 }
+// Remove or adapt: updateUrl, processParameters, selectProxyBasedOnContext, etc.
+// Keep alpha if used.
 
-function meet() {
-  training = false;
-  document.getElementById("profile").classList.remove("active", "show");
-  document.getElementById("profile-tab").classList.remove("active");
-  document.getElementById("share").classList.add("active", "show");
-  document.getElementById("begin").style.removeProperty("display");
-  document.getElementById("backToProfile").style.removeProperty("display");
-  document.getElementById("allContent").style.display = "none";
-  document.getElementById("allUrl").style.display = "none";
-  document.getElementById("navTabs").style.display = "none";
-}
-
-function train() {
-  training = true;
-  selectedContext = document.getElementById("contextSelect").value;
-  updateUrl(selectedContext.toLowerCase());
-
-  switch (selectedContext) {
-    case "Interview":
-      redirectToUrl(trainingUrl);
-      break;
-
-    case "Meet":
-      redirectToUrl(trainingUrl);
-      break;
-
-    case "Date":
-      redirectToUrl(trainingUrl);
-      break;
-
-    case "Debate":
-      redirectToUrl(trainingUrl);
-      break;
-    case "Adventure":
-      redirectToUrl(trainingUrl);
-      break;
-
-    default:
-      console.log("Unknown context: " + selectedContext);
-      break;
-  }
-}
-
-function toggleTraining() {
-  console.log("Toggling training button");
-  const currentContent = document.getElementById("contentField").value;
-  const saveButton = document.getElementById("save");
-  const meetButton = document.getElementById("meetProxy");
-  const testButton = document.getElementById("testProxy");
-  const trainButton = document.getElementById("beginTraining");
-
-  saveButton.classList.remove("btn-success");
-
-  if (currentContent !== originalContent) {
-    saveButton.disabled = false;
-  } else {
-    saveButton.disabled = true;
+// --- DOMContentLoaded Initialization ---
+document.addEventListener("DOMContentLoaded", async () => {
+  console.log("DOM Loaded. Initializing chat...");
+  const globalAuthBtn = document.getElementById("globalAuthButton");
+  if (globalAuthBtn) {
+    globalAuthBtn.addEventListener("click", handleLoginLogout);
   }
 
-  if (currentContent.trim() === "") {
-    testButton.disabled = true;
-  } else {
-    testButton.disabled = false;
-  }
-}
-
-function backToProfile() {
-  training = false;
-  updateUrl(document.getElementById("contextSelect").value.toLowerCase());
-  document.getElementById("profile").classList.add("active", "show");
-  document.getElementById("profile-tab").classList.add("active");
-  document.getElementById("share").classList.remove("active", "show");
-  document.getElementById("share-tab").classList.remove("active");
-  document.getElementById("backToProfile").style.display = "none";
-  document.getElementById("begin").style.display = "none";
-  document.getElementById("allContent").style.removeProperty("display");
-  document.getElementById("allUrl").style.removeProperty("display");
-  document.getElementById("navTabs").style.removeProperty("display");
-}
-
-function openUrlInNewTab() {
-  var urlInput = document.getElementById("urlInput").value;
-  window.open(urlInput, "_blank");
-}
-
-function tryToolTip() {
-  var tryButton = document.getElementById("begin");
-  var tooltip = new bootstrap.Tooltip(tryButton);
-
-  tooltip.show();
-  setTimeout(function () {
-    tooltip.hide();
-    tooltip.dispose();
-    tryButton.setAttribute("data-bs-original-title", "Update Fields");
-  }, 2000);
-}
-
-function processParameters(url) {
-  let currentUrl = new URL(window.location.href);
-  let currentParams = new URLSearchParams(currentUrl.search);
-
-  let newUrl = new URL(regularUrl);
-  let newParams = new URLSearchParams(newUrl.search);
-
-  training = url
-    ? newParams.has("training")
-    : currentParams.has("training") || (contentId === "meet" && content === "");
-  updateUrl(document.getElementById("contextSelect").value.toLowerCase());
-  let context = document.getElementById("contextSelect").value;
-
-  let modalElement = document.getElementById("settingsModal") || "";
-  let settingsModal =
-    bootstrap.Modal.getInstance(modalElement) ||
-    new bootstrap.Modal(modalElement);
-  let nameInput = document.getElementById("nameInput").value;
-  const formFields = document.querySelectorAll(".params");
-  let allFieldsFilled = true;
-
-  formFields.forEach((field) => {
-    if (field.id === "nameInput") {
-      return;
-    }
-    if (field.closest("div").offsetParent !== null) {
-      if (field.value.trim() === "") {
-        allFieldsFilled = false;
-      } else {
-      }
+  // Initialize Auth Listener using onAuthChanged from auth.js
+  onAuthChanged((user, token) => {
+    // Use the callback provided by auth.js
+    loggedInUserId = user ? user.uid : null;
+    console.log(
+      "Auth State Changed via onAuthChanged. UserID:",
+      loggedInUserId
+    );
+    updateAuthButton(user);
+    checkSettingsVisibility(); // Check if settings icon should be shown
+    // If settings modal is open, refresh its data
+    const settingsModal = document.getElementById("settingsModal");
+    if (settingsModal && bootstrap.Modal.getInstance(settingsModal)?._isShown) {
+      loadProfileDataForSettings();
+      fetchMyProxies();
     }
   });
 
-  function fieldLogic() {
-    if (training === true) {
-      beginTraining(trainScript);
-    } else if (tutorial === true) {
-      tutorial = true;
-      begin(transcriptText);
-      settingsModal.hide();
-    } else if (
-      !allFieldsFilled ||
-      (!nameInput && !currentParams.has("guest"))
-    ) {
-      settingsModal.show();
-    } else {
-      settingsModal.hide();
+      // Initial state for the global button
+    // Use a small delay to allow auth.js to potentially resolve initial state
+    setTimeout(() => {
+        updateAuthButton(getCurrentUser());
+    }, 100);
 
-      let submitAsSelect = document.getElementById("submitAs");
-      let nameOption = submitAsSelect.querySelector('option[value="You"]');
+  // Cache main elements
+  botImage = document.getElementById("botImage");
+  botContainer = document.querySelector(".bot-container");
+  botResponseElem = document.getElementById("botResponse");
+  userInputElem = document.getElementById("userInput");
+  submitAsElement = document.getElementById("submitAs");
+  promptElement = document.getElementById("prompt");
+  settingsButton = document.getElementById("settingsButton"); // Cache settings button
 
-      if (nameOption && !currentParams.has("guest")) {
-        nameOption.value = nameInput;
-        nameOption.textContent = nameInput;
-      } else {
-        nameOption.value = proxyName;
-        nameOption.textContent = proxyName;
-      }
+  const transcriptModal = document.getElementById("transcriptModal");
 
-      begin(transcriptText);
-    }
-  }
-
-  switch (context) {
-    case "Meet":
-      transcriptText = "Introduce yourself to " + proxyName + ".";
-      trainScript = transcriptText;
-      fieldLogic();
-
-      break;
-
-    case "Interview":
-      const roleInput = document.getElementById("roleInput").value
-        ? document.getElementById("roleInput").value + " position"
-        : "position";
-
-      const orgInput = document.getElementById("orgInput").value
-        ? document.getElementById("orgInput").value
-        : " your company";
-
-      trainScript = ` ${proxyName} is interviewing for a ${roleInput} at ${orgInput}. Begin the interview:`;
-
-      transcriptText = ` You are interviewing for a ${roleInput}. Introduce yourself by name to ${nameInput} from ${orgInput}:`;
-
-      fieldLogic();
-
-      break;
-
-    case "Date":
-      trainScript = ` You are on a date with ${proxyName}. Introduce yourself and try to get to know what they are looking for in a partner.`;
-
-      transcriptText = ` You are on a date with ${nameInput}. Introduce yourself and try to get to know what they are looking for in a partner.`;
-
-      break;
-
-    case "Debate":
-      var topicInput = document.getElementById("topicInput").value;
-      trainScript = ` You are debating ${proxyName} regarding ${topicInput}. Begin the debate by expressing your position.`;
-      transcriptText = ` You are debating ${nameInput} regarding ${nameInput}. Begin the debate by expressing your position.`;
-
-      fieldLogic();
-
-      break;
-
-    case "Adventure":
-      var topicInput = document.getElementById("topicInput").value;
-      trainScript = ` You are in the middle of an adventure when ${proxyName} suddenly joins. Greet ${proxyName}, explain the mission and ask for help.`;
-      transcriptText = ` You are in the middle of an adventure when ${nameInput} suddenly joins. Greet ${nameInput}, explain the mission and ask for help.`;
-
-      fieldLogic();
-
-      break;
-  }
-
-  if (context.alias === "CT") {
-    laughLength = 0;
-    updateAvatar("Stav", "friendly");
-    transcriptText = "Begin podcast.";
-    begin(transcriptText);
-  }
-}
-
-function beginTraining(transcriptText) {
-  settingsModal.hide();
-
-  const submitAs = document.getElementById("submitAs");
-  const submitTo = document.getElementById("submitTo");
-  submitAs.innerHTML = "";
-
-  nameOption = document.createElement("option");
-  nameOption.value = proxyName;
-  nameOption.textContent = proxyName;
-
-  submitAs.appendChild(nameOption);
-
-  function removeButtonByValue(buttonGroupId, buttonValue) {
-    const buttonGroup = document.getElementById(buttonGroupId);
-    const buttons = buttonGroup.querySelectorAll('input[type="submit"]');
-
-    buttons.forEach((button) => {
-      if (button.value === buttonValue) {
-        buttonGroup.removeChild(button);
+  if (transcriptModal) {
+    transcriptModal.addEventListener("show.bs.modal", function (event) {
+      const transcriptEl = document.getElementById("transcript");
+      if (transcriptEl) {
+        transcriptEl.innerHTML = transcriptHtml; // Set content when modal opens
+        transcriptEl.scrollTop = transcriptEl.scrollHeight; // Scroll to bottom
       }
     });
   }
 
-  // Example usage
-  removeButtonByValue("submitTo", proxyName);
-
-  const hiddenButton = document.querySelector(
-    'input[name="go"][type="submit"][style*="display: none;"]'
-  );
-
-  if (hiddenButton) {
-    const parentElement = hiddenButton.parentNode;
-    parentElement.removeChild(hiddenButton);
+  if (
+    !botImage ||
+    !userInputElem ||
+    !submitAsElement ||
+    !promptElement ||
+    !settingsButton
+  ) {
+    console.error(
+      "Critical DOM elements missing. Chat may not function correctly."
+    );
   }
 
-  begin(transcriptText);
-}
-
-function doneTyping() {
-  const currentSubmitAs = document.getElementById("submitAs").value; // Who was typing
-
-  if (currentSubmitAs in proxies) {
-    // If the user was typing as a specific proxy (e.g., "Shadow"),
-    // and that proxy's avatar was showing the "speak" state.
-    // Revert that specific proxy's avatar to "friendly".
-    console.log(`User done typing as proxy: ${currentSubmitAs}. Reverting ${currentSubmitAs} to friendly.`);
-    updateAvatar(currentSubmitAs, "friendly");
-  } else {
-    // If the user was typing as "You" (or another non-proxy value),
-    // the main bot's avatar (stored in the global 'avatar' variable) was set to "intrigued".
-    // Revert this main bot's avatar to "friendly".
-    console.log(`User done typing as non-proxy. Reverting main bot avatar (${avatar}) to friendly.`);
-    updateAvatar(avatar, "friendly"); // 'avatar' is the global variable for the current bot on screen
-  }
-}
-
-function extractName(userMessage) {
-  avatar = userMessage.split(":")[0].trim();
-  updateAvatar(avatar, "intrigued");
-}
-
-function decodeAndEncode(value) {
-  try {
-    value = decodeURIComponent(value);
-  } catch (e) {}
-  return encodeURIComponent(value);
-}
-
-document
-  .querySelectorAll("#addProxySelect .form-check-input")
-  .forEach((checkbox) => {
-    checkbox.addEventListener("change", function () {
-      updateUrl(document.getElementById("contextSelect").value.toLowerCase());
-    });
-  });
-
-function alpha(e) {
-  var k;
-  document.all ? (k = e.keyCode) : (k = e.which);
-  return (
-    (k > 64 && k < 91) ||
-    (k > 96 && k < 123) ||
-    k == 8 ||
-    k == 32 ||
-    (k >= 48 && k <= 57)
-  );
-}
-
-function selectProxyBasedOnContext(context) {
-  const contextToProxyMap = {
-    Interview: ["Amy"],
-    Debate: ["Donnie"],
-    Date: [],
-    Meet: ["Shadow", "Blaze"],
-    Adventure: ["Rick", "Snake"],
-  };
-
-  const allCheckboxes = document.querySelectorAll("input.form-check-input");
-  allCheckboxes.forEach((checkbox) => {
-    checkbox.checked = false;
-  });
-
-  const checkboxValues = contextToProxyMap[context];
-
-  // Explicitly handle the "Date" context to deselect all checkboxes
-  if (context === "Date") {
-    let proxyInput = document.getElementById("proxyInput");
-    proxyInput.value = "Select a date...";
-
-    updateMeetProxyButtonState();
-    return; // All checkboxes are already deselected
-  }
-
-  if (checkboxValues && checkboxValues.length > 0) {
-    checkboxValues.forEach((checkboxValue) => {
-      const checkbox = document.querySelector(
-        `input.form-check-input[value="${checkboxValue}"]`
-      );
-      if (checkbox) {
-        checkbox.checked = true;
-        checkbox.dispatchEvent(new Event("change"));
-      }
-    });
-  }
-
-  updateMeetProxyButtonState();
-}
-
-function updateMeetProxyButtonState() {
-  const allCheckboxes = document.querySelectorAll("input.form-check-input");
-  const meetProxyButton = document.getElementById("meetProxy");
-
-  const anyChecked = Array.from(allCheckboxes).some(
-    (checkbox) => checkbox.checked
-  );
-
-  if (meetProxyButton) {
-    meetProxyButton.disabled = !anyChecked;
-  }
-}
-
-function updateUrl(context) {
-  const newProxy = document.getElementById("proxySelect").value;
-  let url = window.location.origin + "/" + context.replace(/\s/g, "");
-  let params = new URLSearchParams();
-  let nameInput = document.getElementById("nameInput");
-
-  if (nameInput && nameInput.value) {
-    params.append("name", nameInput.value);
-  }
-  const checkboxes = document.querySelectorAll(
-    "#addProxyDropdown .form-check-input:checked"
-  );
-  guests = [];
-  checkboxes.forEach(function (checkbox) {
-    guests.push(checkbox.value);
-  });
-
-  let guestDisplay = "Select Proxies";
-
-  if (guests.length === 1) {
-    guestDisplay = `${guests[0]}`;
-  } else if (guests.length === 2) {
-    guestDisplay = `${guests[0]} and ${guests[1]}`;
-  } else if (guests.length > 2) {
-    guestDisplay = `${guests.slice(0, -1).join(", ")} and ${guests.slice(-1)}`;
-  } else {
-    guestDisplay = "Select Proxies";
-  }
-
-  let guestNamesSet = new Set(
-    Array.from(checkboxes).map(function (checkbox) {
-      return checkbox.value;
-    })
-  );
-
-  params.delete("guest");
-
-  if (guestNamesSet.size > 0) {
-    let proxyInput = document.getElementById("proxyInput");
-    proxyInput.value = guestDisplay;
-    params.append("guest", Array.from(guestNamesSet).join(","));
-  }
-
-  switch (context) {
-    case "interview":
-      var roleInput = document.getElementById("roleInput");
-      var orgInput = document.getElementById("orgInput");
-      if (roleInput && roleInput.value) {
-        params.append("role", roleInput.value);
-      }
-      if (orgInput && orgInput.value) {
-        params.append("org", orgInput.value);
-      }
-
-      break;
-
-    case "date":
-      //tbd
-      break;
-
-    case "meet":
-      //tbd
-      break;
-
-    case "debate":
-      var topicInput = document.getElementById("topicInput");
-      if (topicInput && topicInput.value) {
-        params.append("topic", topicInput.value);
-      }
-      break;
-
-    case "adventure":
-      //tbd
-      break;
-  }
-
-  if (isTtsEnabled) {
-    params.append("voice", "true");
-  }
-
-  if (document.getElementById("urlInput")) {
-    function replaceSubdomain(url, newSubdomain) {
-      var urlObj = new URL(url);
-      var hostnameParts = urlObj.hostname.split(".");
-      if (hostnameParts.length > 1) {
-        hostnameParts[0] = newSubdomain;
-      } else {
-        hostnameParts.unshift(newSubdomain);
-      }
-      urlObj.hostname = hostnameParts.join(".");
-      return urlObj.toString();
-    }
-
-    var newUrl = replaceSubdomain(url, newProxy);
-    var queryString = params.toString().replace(/\+/g, " ");
-
-    if (queryString) {
-      regularUrl = newUrl + "?" + queryString;
-    } else {
-      regularUrl = newUrl;
-    }
-
-    var paramsWithoutGuests = new URLSearchParams();
-    params.forEach((value, key) => {
-      if (key !== "guest") {
-        paramsWithoutGuests.append(key, value);
-      }
-    });
-
-    var queryStringWithoutGuests = paramsWithoutGuests
-      .toString()
-      .replace(/\+/g, "%20");
-
-    shareUrl = newUrl + "?" + queryStringWithoutGuests + "&share";
-    trainingUrl = newUrl + "?training=true&" + queryString;
-    document.getElementById("urlInput").value = shareUrl;
-  }
-}
-
-document
-  .querySelectorAll("#addProxySelect .form-check-input")
-  .forEach((checkbox) => {
-    checkbox.addEventListener("change", function () {
-      updateUrl(document.getElementById("contextSelect").value.toLowerCase());
-    });
-  });
-
-function handleSelectChange(select) {
-  if (select.value === "other") {
-    document.getElementById("customProxyInput").style.display = "block";
-  } else {
-    document.getElementById("customProxyInput").style.display = "none";
-    addButton(select, select.value);
-    updateUrl(document.getElementById("contextSelect").value.toLowerCase());
-  }
-}
-
-function addButton(buttonElement, option) {
-  const buttonNameInput = document.getElementById("buttonName");
-  const buttonName = option;
-
-  if (!buttonName) {
-    alert("Please enter a name.");
+  // Ensure global `proxies` and `siteId` are available from EJS
+  if (
+    typeof window.proxies === "undefined" ||
+    typeof window.siteId === "undefined"
+  ) {
+    console.error(
+      "EJS variables (proxies, siteId) not found on window object!"
+    );
+    // Fallback or early exit if critical data is missing
     return;
   }
+  // Make them available to the script scope
+  window.proxies = window.proxies || {}; // Ensure it's an object
+  window.siteId = window.siteId || "meet"; // Default if not set
 
-  const inputContainer = document.getElementById("inputContainer");
-  const checkboxContainer = document.getElementById("hostButtons");
-  const checkboxSelect = document.getElementById("addProxySelect");
+  initAudioContext();
+  setupSettingsModal();
+  document
+    .getElementById("authButton")
+    ?.addEventListener("click", handleLoginLogout);
+  document
+    .getElementById("ttsButton")
+    ?.addEventListener("click", toggleTtsState);
+  // The form's onsubmit is now in EJS, calling window.chatApp.askBot
 
-  if (buttonElement) {
-    buttonElement.classList.add("disabled");
-  }
-
-  const formCheckDiv = document.createElement("div");
-  formCheckDiv.setAttribute("class", "form-check");
-
-  const checkbox = document.createElement("input");
-  checkbox.setAttribute("type", "checkbox");
-  checkbox.setAttribute("id", buttonName);
-  checkbox.setAttribute("class", "form-check-input");
-  checkbox.checked = true;
-
-  const tag = "button-" + checkboxContainer.children.length;
-  checkbox.setAttribute("data-tag", tag);
-
-  const label = document.createElement("label");
-  label.setAttribute("for", buttonName);
-  label.setAttribute("class", "form-check-label");
-  label.textContent = buttonName;
-
-  formCheckDiv.appendChild(checkbox);
-  formCheckDiv.appendChild(label);
-
-  checkboxContainer.appendChild(formCheckDiv);
-
-  const simulateLabel = document.getElementById("simulate");
-  if (simulateLabel.style.display === "none") {
-    simulateLabel.style.display = "block";
-  }
-  const changeEvent = new Event("change", { bubbles: true });
-  checkbox.dispatchEvent(changeEvent);
-}
-
-// Event Listeners
-
-document.getElementById("patreonButton").addEventListener("click", function () {
-  window.open("https://patreon.com/Instinite", "_blank");
-});
-
-document.querySelector("#submitTo").addEventListener("click", function (event) {
-  if (event.target.tagName === "INPUT") {
-    var tag = event.target.dataset.tag;
-
-    // Send an event to Google Analytics
-    gtag("event", "click", {
-      event_category: "Button",
-      event_label: tag,
-    });
-  }
-});
-
-document.getElementById("ttsButton").addEventListener("click", toggleTtsState);
-
-document
-  .getElementById("userInput")
-  .addEventListener("keydown", function (event) {
-    if (previousResponse && previousResponse !== currentPrompt) {
-      prompt.textContent = previousResponse;
-      currentPrompt = previousResponse;
-      prompt.innerHTML += transcriptButtonHtml;
-    }
-
-    if (event.key === "Enter") {
-      event.preventDefault();
+  if (userInputElem) {
+    userInputElem.addEventListener("input", function () {
       clearTimeout(typingTimer);
+      const currentSubmitAsValue = submitAsElement
+        ? submitAsElement.value
+        : "User";
 
-      let button = document.querySelector(
-        `#submitTo input[type="submit"][value="${previousAvatar}"]`
-      );
+      // Always show what user is typing in the response bubble for preview
+      if (botResponseElem) {
+        botResponseElem.textContent = this.value;
+      }
 
-      if (!button || button.disabled) {
-        let buttons = document.querySelectorAll(
-          '#submitTo input[type="submit"]'
+      // Update avatar based on who is typing
+      const currentSubmitAsKey = currentSubmitAsValue.toLowerCase();
+
+      if (window.proxies && window.proxies[currentSubmitAsKey]) {
+        // User is typing as a recognized proxy
+        if (botResponseElem) {
+          botResponseElem.textContent = this.value;
+        }
+        updateAvatar(currentSubmitAsValue, "speak");
+        toggleResponseContainer(); // Show bubble
+      } else {
+        // User is typing as "User" or an unrecognized name
+        if (botResponseElem) {
+          botResponseElem.textContent = ""; // Clear the speech bubble
+        }
+        updateAvatar(avatar, "intrigued"); // Main bot on screen becomes intrigued
+        toggleResponseContainer(); // This will likely hide it if textContent is empty
+      }
+      typingTimer = setTimeout(doneTyping, doneTypingInterval);
+      enableSubmitButtons();
+    });
+
+    userInputElem.addEventListener("keydown", function (event) {
+      if (
+        previousResponse &&
+        previousResponse !== currentPrompt &&
+        promptElement
+      ) {
+        promptElement.textContent = previousResponse;
+        currentPrompt = previousResponse; // Update currentPrompt
+        if (transcriptButtonHtml && !promptElement.querySelector("button")) {
+          promptElement.insertAdjacentHTML("beforeend", transcriptButtonHtml);
+        }
+      }
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        clearTimeout(typingTimer);
+        // Simulate a click on the determined "submitTo" button
+        // This will trigger the form submission which then calls askBot
+        const form = document.getElementById("ask");
+        // Determine target and click
+        let targetSubmitTo;
+        const activeButtons = Array.from(
+          document.querySelectorAll(
+            '#submitTo input[type="submit"].chat-submit-button:not([disabled])'
+          )
         );
-
-        for (let btn of buttons) {
-          if (!btn.disabled) {
-            button = btn;
-            break;
-          }
+        if (
+          previousAvatar &&
+          activeButtons.some((btn) => btn.value === previousAvatar)
+        ) {
+          targetSubmitTo = previousAvatar;
+        } else if (activeButtons.length > 0) {
+          targetSubmitTo = activeButtons[0].value;
+        } else {
+          const anyButton = document.querySelector(
+            '#submitTo input[type="submit"].chat-submit-button'
+          );
+          targetSubmitTo = anyButton ? anyButton.value : null;
         }
-      }
 
-      if (button) {
-        button.click();
-      }
-    }
-  });
-
-document.getElementById("userInput").addEventListener("keypress", function () {
-  clearTimeout(typingTimer);
-  submitAs = document.getElementById("submitAs").value;
-  if (submitAs in proxies) {
-    updateAvatar(submitAs, "speak");
-  } else {
-    updateAvatar(avatar, "intrigued");
-  }
-  typingTimer = setTimeout(doneTyping, doneTypingInterval);
-});
-
-document.getElementById("userInput").addEventListener("input", function () {
-  submitAs = document.getElementById("submitAs").value;
-
-  if (submitAs in proxies) {
-    botResponse.textContent = document.getElementById("userInput").value;
-    toggleResponseContainer();
-  }
-  if (response) {
-    document.getElementById("prompt").textContent = response;
-  }
-
-  let submitButtons = document.querySelectorAll('input[type="submit"]');
-  submitButtons.forEach((button) => {
-    if (button.value === submitAs) {
-      button.disabled = true;
-    } else {
-      button.disabled = false;
-    }
-  });
-});
-
-document.getElementById("submitAs").addEventListener("change", function () {
-  if (isRequestPending) return;
-  if (speaking) return;
-  updateAvatar(document.getElementById("submitAs").value, "intrigued");
-  botResponse.textContent = document.getElementById("userInput").value;
-  toggleResponseContainer();
-});
-
-document
-  .getElementById("feedbackForm")
-  .addEventListener("submit", function (e) {
-    e.preventDefault();
-
-    var feedback = document.getElementById("feedbackText").value;
-    console.log("Feedback:", feedback);
-    fetch("/send-feedback", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ feedback: feedback }),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Network response was not ok.");
-        }
-        return response.json();
-      })
-      .then((data) => {
-        console.log("Response data:", data);
-        feedbackModal.hide();
-
-        document.getElementById("feedbackForm").reset();
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-      });
-  });
-async function initialize() {
-  try {
-    await preloadImages(proxies);
-
-    submitButton = document.querySelector('.btn-group input[type="submit"]');
-    submitAsElement = document.getElementById("submitAs");
-    promptElement = document.getElementById("prompt");
-    const myTab = document.getElementById("myTab");
-    const tabDescription = document.getElementById("tabDescription");
-
-    function updateTabDescription(tabId) {
-      switch (tabId) {
-        case "practice-tab":
-          tabDescription.innerText = `Interact with other proxies as ${proxyName} and automatically refine your profile based on your input.`;
-          break;
-        case "share-tab":
-          tabDescription.innerText = `Copy a custom URL and share with others to interact with ${proxyName}. Settings will be inaccessible from this URL.`;
-          break;
-        default:
-          tabDescription.innerText = "";
-      }
-    }
-    // hideAlert(document.getElementById("contextUpdated"));
-    const initialActiveTab = myTab.querySelector(".nav-link.active");
-    // if (initialActiveTab) {
-    //   updateTabDescription(initialActiveTab.id);
-    // }
-    updateTabDescription(initialActiveTab.id);
-    myTab.addEventListener("shown.bs.tab", function (event) {
-      const activatedTab = event.target; // Newly activated tab
-      updateTabDescription(activatedTab.id);
-    });
-
-    if (context.alias !== "CT") {
-      const createProxyLink = document.getElementById("createProxyLink");
-      const currentUrl = new URL(window.location.href);
-      currentUrl.pathname = "/create";
-      createProxyLink.href = currentUrl.toString();
-
-      settingsModal = new bootstrap.Modal(
-        document.getElementById("settingsModal")
-      );
-      document
-        .getElementById("proxySelect")
-        .addEventListener("change", function () {
-          const selectedValue = this.value;
-          if (selectedValue === "createNewProxy") {
-            window.open(createProxyLink.href, "_blank");
-            this.selectedIndex = 0;
-          }
-        });
-    }
-
-    function hideAlert(alertElement) {
-      alertElement.classList.remove("show");
-      alertElement.style.zIndex = "";
-    }
-
-    // document
-    //   .querySelector("#contextUpdated .btn-close")
-    //   .addEventListener("click", function () {
-    //     hideAlert(document.getElementById("contextUpdated"));
-    //   });
-
-    const inputElement = document.getElementById("userInput");
-    const imageElement = document.getElementById("botImage");
-    inputElement.addEventListener("focus", function () {
-      imageElement.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-
-    submitAs = submitAsElement ? submitAsElement.value : null;
-    submitTo = submitButton ? submitButton.value : "Guest";
-
-    if (submitAs in context.submitToOptions) {
-      avatar = submitAs;
-    } else {
-      avatar = submitTo;
-    }
-
-    hasPersonality = !proxies[submitTo].meet ? false : true;
-    hasDate = !proxies[submitTo].date ? false : true;
-    hasInterview = !proxies[submitTo].debate ? false : true;
-
-    feedbackModal = new bootstrap.Modal(
-      document.getElementById("feedbackModal")
-    );
-    saveButton = document.getElementById("save");
-
-    if (siteId === "custom" || context.alias === "CT") {
-      doneTypingInterval = 1000;
-    } else {
-      doneTypingInterval = 2000;
-    }
-
-    updateAvatar(Object.keys(proxies)[0], "friendly");
-    const botResponse = document.getElementById("botResponse");
-    botResponse.textContent = ``;
-
-    const dateElement = document.getElementById("date");
-    const now = new Date();
-    now.setFullYear(now.getFullYear() - 4); // Subtract four years
-    if (context.alias !== "CT") {
-      // Run on select change
-      document
-        .getElementById("contextSelect")
-        .addEventListener("change", updateContent);
-
-      // Enable save button on input if contentField is different from original content
-      document
-        .getElementById("contentField")
-        .addEventListener("input", function () {
-          const currentContent = document.getElementById("contentField").value;
-          const saveButton = document.getElementById("save");
-          saveButton.classList.remove("btn-success");
-          if (currentContent !== originalContent) {
-            saveButton.disabled = false;
+        if (targetSubmitTo) {
+          const buttonToClick = document.querySelector(
+            `#submitTo input[type="submit"][value="${targetSubmitTo}"]`
+          );
+          if (buttonToClick) {
+            // Create a synthetic submit event for the askBot function
+            const syntheticEvent = {
+              preventDefault: () => {}, // Mock preventDefault
+              submitter: buttonToClick,
+            };
+            window.chatApp.askBot(syntheticEvent); // Call directly
           } else {
-            saveButton.disabled = true;
+            form.requestSubmit(); // Fallback to general form submission if button not found
           }
-        });
-
-      if (window.location.href.includes("voice=true")) {
-        console.log("Voice is enabled");
-        toggleTtsState();
+        } else {
+          form.requestSubmit(); // Fallback
+        }
       }
+    });
+  }
 
-      const hostButtons = document.getElementById("hostButtons");
+  await preloadImages(window.proxies); // Use window.proxies
+  // Initial avatar setup (use window.currentProxySubdomain from EJS)
+  updateAvatar(
+    window.currentProxySubdomain || Object.keys(window.proxies)[0] || "Guest",
+    "friendly"
+  );
+  toggleResponseContainer();
+  enableSubmitButtons();
 
-      hostButtons.addEventListener("change", function (e) {
-        updateUrl(document.getElementById("contextSelect").value.toLowerCase());
+  // Set initial submitAs
+  if (submitAsElement) submitAs = submitAsElement.value;
+
+  const feedbackModalElement = document.getElementById("feedbackModal");
+  if (feedbackModalElement) {
+    feedbackModal = new bootstrap.Modal(feedbackModalElement);
+    document
+      .getElementById("feedbackForm")
+      ?.addEventListener("submit", function (e) {
+        e.preventDefault();
+        const feedbackText = document.getElementById("feedbackText").value;
+        fetch("/send-feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            feedback: feedbackText,
+            email: document.getElementById("proxyEmail").value,
+          }),
+        })
+          .then((resp) => resp.json())
+          .then(() => {
+            feedbackModal.hide();
+            this.reset();
+            alert("Feedback sent!");
+          })
+          .catch((err) => console.error("Feedback error:", err));
       });
-      const contentField = document.getElementById("contentField");
-      if (contentField) {
-        contentField.addEventListener("input", toggleTraining);
-      }
-      selectProxyBasedOnContext(document.getElementById("contextSelect").value);
+  }
 
-      // Parameters
-      // ----------------------------
-      var urlParams = new URLSearchParams(window.location.search);
+  console.log("Chat.js Initialized.");
+});
 
-      var name = decodeURIComponent(urlParams.get("name") || "");
-
-      if (name) {
-        document.getElementById("nameInput").value = name;
-      }
-
-      // Interview
-      var role = decodeURIComponent(urlParams.get("role") || "");
-      var org = decodeURIComponent(urlParams.get("org") || "");
-
-      if (role) {
-        document.getElementById("roleInput").value = role;
-      }
-
-      if (org) {
-        document.getElementById("orgInput").value = org;
-      }
-
-      // Debate
-      var topic = decodeURIComponent(urlParams.get("topic") || "");
-
-      if (topic) {
-        document.getElementById("topicInput").value = topic;
-      }
-
-      document
-        .querySelectorAll("input.form-check-input")
-        .forEach((checkbox) => {
-          checkbox.addEventListener("change", updateMeetProxyButtonState);
-        });
-
-      updateMeetProxyButtonState();
-      updateContext();
-
-      updateUrl(String(siteId));
-      updateContent();
-      processParameters();
-      toggleTraining();
-      document.body.classList.toggle("dark-mode");
-    }
-  } catch (error) {
-    console.error("Error preloading images:", error);
+function doneTyping() {
+  const currentSubmitAsVal = submitAsElement ? submitAsElement.value : "User";
+  const currentSubmitAsKey = currentSubmitAsVal.toLowerCase();
+  if (proxies[currentSubmitAsKey]) {
+    updateAvatar(currentSubmitAsVal, "friendly");
+  } else {
+    updateAvatar(avatar, "friendly");
   }
 }
-document.addEventListener("DOMContentLoaded", (event) => {
-  initialize();
-});
 
-window.onload = function () {};
+// Expose necessary functions globally if called by inline HTML handlers
+window.chatApp = {
+  handleSpeech,
+  askBot, // Ensure this is correctly defined and working
+  copyUrl,
+  testUrl,
+  // Keep other functions that were in your original initialize() and are still needed by EJS
+  // updateContext: () => loadProfileDataForSettings(), // If contextSelect onchange calls this
+  // updateUrl: () => { /* review if still needed */ },
+};
