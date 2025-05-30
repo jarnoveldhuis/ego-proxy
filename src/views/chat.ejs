@@ -75,6 +75,7 @@
         id="globalAuthButton"
         type="button"
         title="Login/Logout"
+        style="padding: 8px 16px; display: flex; align-items: center; gap: 8px"
       >
         <i class="fas fa-sign-in-alt"></i>
       </button>
@@ -127,9 +128,6 @@
               <button class="btn" id="settingsButton" type="button" data-bs-toggle="modal" data-bs-target="#settingsModal">
                 <i class="fas fa-cog"></i>
               </button>
-               <button class="btn" id="authButton" type="button">
-                <i class="fas fa-sign-in-alt"></i> 
-              </button>
               <button class="btn" type="button" data-bs-toggle="modal" data-bs-target="#transcriptModal">
                 <i class="fas fa-file-alt"></i>
               </button>
@@ -167,9 +165,9 @@
                         <li class="nav-item" role="presentation">
                             <button class="nav-link" id="my-proxies-tab" data-bs-toggle="tab" data-bs-target="#my-proxies-content" type="button" role="tab">My Proxies</button>
                         </li>
-                         <li class="nav-item" role="presentation">
+                         <!-- <li class="nav-item" role="presentation">
                            <button class="nav-link" id="share-tab-button" data-bs-toggle="tab" data-bs-target="#share-content" type="button" role="tab">Share</button>
-                        </li>
+                        </li> -->
                     </ul>
 
                     <div class="tab-content" id="settingsTabContent">
@@ -177,13 +175,13 @@
                              <form id="editForm">
                                 <input type="hidden" id="contentIdField" name="contentId">
                                 <div class="mb-3">
-                                    <label for="contextSelect" class="form-label">Select Scenario:</label>
+                                    <label for="contextSelect" class="form-label">Select Profile:</label>
                                     <select class="form-select" id="contextSelect">
-                                        <option value="meet" <%= currentSiteId === 'meet' ? 'selected' : '' %>>Meet & Greet</option>
-                                        <option value="interview" <%= currentSiteId === 'interview' ? 'selected' : '' %>>Interview</option>
-                                        <option value="date" <%= currentSiteId === 'date' ? 'selected' : '' %>>Date</option>
+                                        <option value="meet" <%= currentSiteId === 'meet' ? 'selected' : '' %>>Personality</option>
+                                        <option value="interview" <%= currentSiteId === 'interview' ? 'selected' : '' %>>Resume</option>
+                                        <!-- <option value="date" <%= currentSiteId === 'date' ? 'selected' : '' %>>Date</option>
                                         <option value="debate" <%= currentSiteId === 'debate' ? 'selected' : '' %>>Debate</option>
-                                        <option value="adventure" <%= currentSiteId === 'adventure' ? 'selected' : '' %>>Adventure</option>
+                                        <option value="adventure" <%= currentSiteId === 'adventure' ? 'selected' : '' %>>Adventure</option> -->
                                     </select>
                                 </div>
                                 <div class="mb-3">
@@ -193,10 +191,10 @@
                                 <button type="submit" class="btn btn-primary" id="saveProfileButton" disabled>Save Profile</button>
                                 <span id="saveStatus" class="ms-2"></span>
                             </form>
-                            <hr/>
+                            <!-- <hr/>
                             <h6>Training:</h6>
                             <div id="trainingProgressBarModal" class="mb-2">Not started</div>
-                            <button id="beginTrainingButton" class="btn btn-info" disabled>Begin Training</button>
+                            <button id="beginTrainingButton" class="btn btn-info" disabled>Begin Training</button> -->
                         </div>
 
                         <div class="tab-pane fade p-3" id="my-proxies-content" role="tabpanel">

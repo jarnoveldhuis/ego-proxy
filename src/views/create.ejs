@@ -147,17 +147,28 @@
           style="display: block; margin: auto"
         />
       </div>
-
+      <div style="
+    position: absolute;
+    top: 70%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex; /* This will arrange the buttons in a row */
+    gap: 15px; /* Adjust the space between the buttons as needed */
+">
+    <button 
+        type="button" 
+        class="btn btn-lg btn-success" 
+        id="loginButtonOnCreatePage"
+        style="background-color: #000000; border-color: #ffffff; color: white;"
+    >
+        <i class="fab fa-google"></i> Log In
+    </button>
       <button
         type="button"
         class="btn btn-primary"
         data-bs-toggle="modal"
         data-bs-target="#createProxyModal"
         style="
-          position: absolute;
-          top: 70%;
-          left: 50%;
-          transform: translate(-50%, -50%);
           background-color: black;
           color: white;
           border-color: white;
@@ -165,6 +176,7 @@
       >
         Create a Proxy
       </button>
+      </div>
     </div>
 
     <!-- Create Proxy Modal -->

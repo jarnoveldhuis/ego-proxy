@@ -693,7 +693,7 @@ app.post("/ask/", apiLimiter, ensureAuthenticatedSession, async (req, res) => {
       const progress = Math.floor(
         (transcript.length / transcriptThreshold) * 100
       );
-      let storyProgress = `\nThe story is now ${progress}% complete. Use the transcript thus far and Joseph Campbells' Hero's journey framework to inform what happens next.\n`;
+      let storyProgress = `\nThe story is now ${progress}% complete. Update the script with the most engaging dialogue.\n`;
 
       let charactersInScene = proxyList.filter(
         (proxy) =>
@@ -702,7 +702,7 @@ app.post("/ask/", apiLimiter, ensureAuthenticatedSession, async (req, res) => {
           proxy.toLowerCase() !== "interviewer"
       );
 
-      let systemMessage = `You are a screenwriter writing the next line of dialogue for ${currentSpeaker}. Your personality is: "${proxyPersonalProfile}". The overall context is: "${contextMessage}". Characters in the scene: ${charactersInScene.join(
+      let systemMessage = `You are a screenwriter writing the next line of dialogue for ${currentSpeaker}: "${proxyPersonalProfile}". The overall context is: "${contextMessage}". Characters in the scene: ${charactersInScene.join(
         ", "
       )}. Their personalities are: ${Object.entries(proxies)
         .filter(([name]) => charactersInScene.includes(name))
@@ -1086,7 +1086,7 @@ async function fetchContextAndProxies(siteId, subdomain, guests) {
       .map(normalizeOption)
       .filter(Boolean);
     context.submitAsOptions = [
-      ...new Set([subdomain, ...context.submitAsOptions, ...guests]),
+      ...new Set([...context.submitAsOptions, ...guests, subdomain]),
     ]
       .map(normalizeOption)
       .filter(Boolean);

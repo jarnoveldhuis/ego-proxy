@@ -113,21 +113,20 @@ function handleLoginLogoutApp() {
 }
 
 function updateAuthButtonUI() {
-  // Renamed
   const authButton = document.getElementById("globalAuthButton");
   const authIcon = authButton ? authButton.querySelector("i") : null;
   if (!authButton || !authIcon) return;
-
-  // console.log("Chat.js: updateAuthButtonUI called with app user state:", currentAppUser.isLoggedIn);
 
   if (currentAppUser.isLoggedIn) {
     authIcon.classList.remove("fa-sign-in-alt");
     authIcon.classList.add("fa-sign-out-alt");
     authButton.title = "Log Out";
+    authButton.innerHTML = '<i class="fas fa-sign-out-alt"></i> Log Out';
   } else {
     authIcon.classList.remove("fa-sign-out-alt");
     authIcon.classList.add("fa-sign-in-alt");
     authButton.title = "Log In with Google";
+    authButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> Log In';
   }
 }
 
