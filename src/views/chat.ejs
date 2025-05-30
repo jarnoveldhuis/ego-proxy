@@ -55,6 +55,19 @@
 </head>
 
 <body>
+  <% // Default to not logged in if appUser is not passed or is incomplete %>
+  <% const clientAppUser = typeof appUser !== 'undefined' && appUser ? appUser : { isLoggedIn: false, uid: null, email: null }; %>
+  <script>
+    window.appUserFromServer = <%- JSON.stringify(clientAppUser) %>;
+  </script>
+
+  <script type="module" src="/js/firebase.js"></script>
+  <script type="module" src="/js/auth.js"></script>
+  <% if (typeof siteId !== 'undefined' && siteId) { %> <%# Only include chat.js for chat page %>
+    <script type="module" src="/js/chat.js"></script>
+  <% } else { %> <%# Only include create.js for create page (assuming / is create) %>
+    <script type="module" src="/js/create.js"></script>
+  <% } %>
   <div id="full-container">
     <div style="position: absolute; top: 15px; right: 15px; z-index: 1050">
       <button
@@ -234,9 +247,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
 
-  <script type="module" src="/js/firebase.js"></script>
-  <script type="module" src="/js/auth.js"></script>
-  <script type="module" src="/js/chat.js"></script>
+
 
   <script>
     window.context = <%- JSON.stringify(context) %>;

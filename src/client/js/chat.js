@@ -1,72 +1,126 @@
 // src/client/js/chat.js
 
-// Firebase/Auth Imports
-import { auth } from "./firebase.js"; //
 import {
-  getCurrentUser,
-  getIdTokenAsync, // Ensure this is imported
-  handleGoogleLogin,
-  handleLogout,
-  onAuthChanged, // Ensure this is imported
+  ensureAuthInitialized,
+  onFirebaseAuthChanged, // To react to Firebase client-side changes
+  handleGoogleLogin, // From the updated auth.js that now also hits /api/auth/session-login
+  handleLogout, // From the updated auth.js that now also hits /api/auth/session-logout
 } from "./auth.js";
-import {
-  GoogleAuthProvider,
-  signInWithPopup,
-  signOut,
-} from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js"; // Removed onAuthStateChanged here as we use the one from auth.js
+// We don't directly import signInWithPopup etc. here anymore, auth.js handles that.
 
+// --- Application User State (from backend session) ---
+let currentAppUser = {
+  isLoggedIn: false,
+  details: null, // Will store { userId, email } from /api/auth/status
+};
 
-function handleLoginLogout() {
-    const user = getCurrentUser(); // From auth.js
-    if (user) {
-        handleLogout() // From auth.js
-            .then(() => {
-                console.log("Global logout successful. Firebase session should be cleared.");
-                // IMPORTANT: After logout, redirect to the home page.
-                // This ensures a fresh page load where auth state will be re-evaluated as null.
-                // The server will then serve create.ejs, and create.js will see no user.
-                if (window.location.pathname === '/') {
-                    // If already on root, a simple reload might be enough after auth state has propagated
-                    // But redirecting ensures the server also sees a fresh request.
-                    window.location.reload();
-                } else {
-                    window.location.href = '/';
-                }
-            })
-            .catch(error => {
-                console.error("Logout error:", error);
-                // Handle logout error display if necessary
-            });
+// This global variable will store the app-level logged-in user ID
+let loggedInUserId = null;
+
+// Function to fetch and update the application's authentication state
+async function fetchAndUpdateAppAuthState() {
+  console.log(
+    "Chat.js: Fetching application auth status from /api/auth/status..."
+  );
+  try {
+    const response = await fetch("/api/auth/status");
+    if (!response.ok) {
+      // Network error or server issue, assume logged out for safety
+      console.error(
+        "Chat.js: /api/auth/status request failed with status:",
+        response.status
+      );
+      currentAppUser.isLoggedIn = false;
+      currentAppUser.details = null;
     } else {
-        handleGoogleLogin() // From auth.js
-            .then(loggedInUser => {
-                if (loggedInUser) {
-                    // If login happens on a page other than where proxies are listed,
-                    // redirect to home so server can route to first proxy.
-                    console.log("Global login successful. Redirecting to home.");
-                    window.location.href = '/';
-                }
-            })
-            .catch((error) => {
-                console.error("Google login error:", error.message, error.code);
-                // Handle login error display
-            });
+      const data = await response.json();
+      if (data.success) {
+        currentAppUser.isLoggedIn = data.loggedIn;
+        currentAppUser.details = data.user; // user is { userId, email } or null
+        console.log("Chat.js: App auth status updated:", currentAppUser);
+      } else {
+        // API reported success:false, assume logged out
+        console.warn(
+          "Chat.js: /api/auth/status reported not successful. Assuming logged out."
+        );
+        currentAppUser.isLoggedIn = false;
+        currentAppUser.details = null;
+      }
     }
+  } catch (error) {
+    console.error("Chat.js: Error fetching /api/auth/status:", error);
+    currentAppUser.isLoggedIn = false;
+    currentAppUser.details = null;
+  }
+
+  // Update the global loggedInUserId based on app user state
+  loggedInUserId = currentAppUser.isLoggedIn
+    ? currentAppUser.details?.userId
+    : null;
+
+  // Update UI elements that depend on auth state
+  updateAuthButtonUI(); // Changed name for clarity
+  checkSettingsVisibility();
 }
 
-function updateAuthButton(user) {
-  // This function updates the #globalAuthButton
-  const authButton = document.getElementById("globalAuthButton"); // Target global button
-  const authIcon = authButton ? authButton.querySelector("i") : null;
+function handleLoginLogoutApp() {
+  // Renamed to avoid conflict if old one was global
+  if (currentAppUser.isLoggedIn) {
+    handleLogout() // This is from the updated auth.js
+      .then(() => {
+        console.log(
+          "Chat.js: Logout process initiated via auth.js. App state will refresh."
+        );
+        // auth.js now handles Firebase signout and backend session destruction.
+        // onFirebaseAuthChanged will trigger fetchAndUpdateAppAuthState.
+        // Redirect to home after logout.
+        if (window.location.pathname === "/") {
+          window.location.reload();
+        } else {
+          window.location.href = "/";
+        }
+      })
+      .catch((error) => {
+        console.error("Chat.js: Logout error:", error);
+      });
+  } else {
+    handleGoogleLogin() // This is from the updated auth.js
+      .then((firebaseUser) => {
+        // firebaseUser is returned by handleGoogleLogin in auth.js
+        if (firebaseUser) {
+          console.log(
+            "Chat.js: Login process initiated via auth.js. App state will refresh."
+          );
+          // auth.js now handles Firebase signin and backend session creation.
+          // onFirebaseAuthChanged will trigger fetchAndUpdateAppAuthState.
+          // Redirect to home to apply new session state server-side if needed.
+          if (window.location.pathname !== "/") {
+            // Only redirect if not already on a page that might show dashboard
+            window.location.href = "/";
+          } else {
+            fetchAndUpdateAppAuthState(); // Or just refresh state if staying on same page
+          }
+        }
+      })
+      .catch((error) => {
+        console.error(
+          "Chat.js: Google login error:",
+          error.message,
+          error.code
+        );
+      });
+  }
+}
 
+function updateAuthButtonUI() {
+  // Renamed
+  const authButton = document.getElementById("globalAuthButton");
+  const authIcon = authButton ? authButton.querySelector("i") : null;
   if (!authButton || !authIcon) return;
 
-  console.log(
-    "chat.js: updateAuthButton (for global) called with user:",
-    user ? user.uid : null
-  );
+  // console.log("Chat.js: updateAuthButtonUI called with app user state:", currentAppUser.isLoggedIn);
 
-  if (user) {
+  if (currentAppUser.isLoggedIn) {
     authIcon.classList.remove("fa-sign-in-alt");
     authIcon.classList.add("fa-sign-out-alt");
     authButton.title = "Log Out";
@@ -99,14 +153,12 @@ let isRequestPending = false,
 let previousResponse = "",
   currentPrompt = "";
 let submitAs = "",
-  submitTo = ""; // submitAs from dropdown, submitTo from button click
+  submitTo = "";
 let training = false,
   tutorial = false,
   settingsModalInstance,
   feedbackModal,
   originalContent = "";
-let loggedInUserId = null;
-
 // --- DOM Elements (Cached) ---
 let botImage,
   botContainer,
@@ -604,21 +656,14 @@ async function askBot(event) {
   }
 
   try {
-    const token = await getIdTokenAsync();
-    console.log("Token fetched for /ask request:", token ? "Exists" : "NULL");
-
-    const headers = { "Content-Type": "application/json" };
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    } else {
-      console.warn(
-        "No token available for /ask request. User might not be logged in."
-      );
-    }
+    console.log(
+      "Chat.js: Calling /ask. App Logged in User ID:",
+      loggedInUserId
+    ); // Uses the global loggedInUserId from session
 
     const fetchResponse = await fetch("/ask", {
       method: "POST",
-      headers: headers,
+      headers: { "Content-Type": "application/json" }, // No Authorization header with Firebase token
       body: JSON.stringify({
         question: questionToSend,
         transcript: transcriptText,
@@ -628,22 +673,26 @@ async function askBot(event) {
         guests: guests,
         training: training,
         tutorial: tutorial,
+        // Backend can get userId from req.appUser.uid via ensureAuthenticatedSession
       }),
     });
-
+    clearTimeout(confusedTimer); // Clear timer once response starts processing
     const data = await fetchResponse.json();
+
     if (!fetchResponse.ok) {
       let errorMsg = "Request failed to /ask";
       if (data && data.error) errorMsg = data.error;
       else if (data && data.message) errorMsg = data.message;
-      console.error(
-        "Server responded with an error:",
-        fetchResponse.status,
-        data
-      );
+
+      if (fetchResponse.status === 401) {
+        // Unauthorized from backend session
+        errorMsg = "Your session may have expired. Please log in again.";
+        // Optionally prompt for login:
+        // botResponseElem.innerHTML = 'Session expired. Please <a href="#" id="reloginLinkError">log in</a>.';
+        // document.getElementById('reloginLinkError')?.addEventListener('click', (e) => { e.preventDefault(); handleLoginLogoutApp();});
+      }
       throw new Error(`${errorMsg} (Status: ${fetchResponse.status})`);
     }
-    clearTimeout(confusedTimer);
 
     if (data.personalityUpdated) {
       // ... (keep personality update logic) ...
@@ -714,26 +763,24 @@ async function askBot(event) {
   }
 }
 
-// --- Settings Modal Logic ---
+//// --- Settings Modal Logic ---
 function setupSettingsModal() {
   const modalElement = document.getElementById("settingsModal");
   if (!modalElement) return;
   settingsModalInstance = new bootstrap.Modal(modalElement);
 
-  settingsButton = document.getElementById("settingsButton"); // The gear icon
+  settingsButton = document.getElementById("settingsButton");
   if (settingsButton) {
     settingsButton.addEventListener("click", async () => {
-      // Made async
-      const token = await getIdTokenAsync(); // Get token before checking
-      const currentUser = getCurrentUser();
-      loggedInUserId = currentUser ? currentUser.uid : null; // Update loggedInUserId
-
+      // loggedInUserId is now updated by fetchAndUpdateAppAuthState
       if (loggedInUserId && window.proxyOwnerId === loggedInUserId) {
-        loadProfileDataForSettings();
-        fetchMyProxies();
+        loadProfileDataForSettings(); // This may need to use app session for fetching
+        fetchMyProxiesAppSession(); // Changed name to reflect it uses app session
         settingsModalInstance.show();
+      } else if (loggedInUserId && window.proxyOwnerId !== loggedInUserId) {
+        alert("You must be the owner of this proxy to change settings.");
       } else {
-        alert("Please log in as the owner to change settings.");
+        alert("Please log in to change settings.");
       }
     });
   }
@@ -743,7 +790,7 @@ function setupSettingsModal() {
     ?.addEventListener("change", loadProfileDataForSettings);
   document
     .getElementById("editForm")
-    ?.addEventListener("submit", saveProfileChanges);
+    ?.addEventListener("submit", saveProfileChangesAppSession); // Changed name
   document
     .getElementById("beginTrainingButton")
     ?.addEventListener("click", startTrainingSession);
@@ -755,47 +802,50 @@ function setupSettingsModal() {
     ?.addEventListener("input", checkSaveButtonState);
   document
     .getElementById("copyShareUrlButton")
-    ?.addEventListener("click", copyUrl); // Use new copyUrl
+    ?.addEventListener("click", copyUrl);
 }
 
 function loadProfileDataForSettings() {
-  const contextSelect = document.getElementById("contextSelect");
-  const contentField = document.getElementById("contentField");
-  const contentIdLabel = document.getElementById("contentIdLabel");
-  const saveProfileButton = document.getElementById("saveProfileButton");
-
+  // This function itself doesn't need auth changes, but relies on `loggedInUserId` and `window.proxyOwnerId`
+  // which are set based on auth state.
+  const contextSelect = document.getElementById("contextSelect"); /* ... */
+  const contentField = document.getElementById("contentField"); /* ... */
+  const contentIdLabel = document.getElementById("contentIdLabel"); /* ... */
+  const saveProfileButton =
+    document.getElementById("saveProfileButton"); /* ... */
   if (!contextSelect || !contentField || !contentIdLabel || !saveProfileButton)
     return;
-
-  let contentId = contextSelect.value; // Keep 'let' if it needs reassignment
+  let contentId = contextSelect.value;
   document.getElementById("contentIdField").value = contentId;
   const scenarioText = contextSelect.options[contextSelect.selectedIndex].text;
   contentIdLabel.textContent = `Personality for ${scenarioText}:`;
-
-  const currentProxyData = proxies[window.currentProxySubdomain.toLowerCase()];
+  const currentProxyData =
+    window.proxies[window.currentProxySubdomain.toLowerCase()];
   let content =
     currentProxyData && currentProxyData[contentId]
       ? currentProxyData[contentId]
-      : ""; // Keep 'let'
+      : "";
   contentField.value = content;
   originalContent = content;
-
   const canEdit = loggedInUserId && window.proxyOwnerId === loggedInUserId;
   contentField.disabled = !canEdit;
-  saveProfileButton.disabled = true; // Always start disabled
-  toggleTrainingButtonState(); // Update training button state
+  saveProfileButton.disabled = true;
+  toggleTrainingButtonState();
 }
 
 function checkSaveButtonState() {
-  const contentField = document.getElementById("contentField");
-  const saveProfileButton = document.getElementById("saveProfileButton");
+  // Relies on loggedInUserId
+  const contentField = document.getElementById("contentField"); /* ... */
+  const saveProfileButton =
+    document.getElementById("saveProfileButton"); /* ... */
   if (!contentField || !saveProfileButton) return;
   const canEdit = loggedInUserId && window.proxyOwnerId === loggedInUserId;
   saveProfileButton.disabled =
     !canEdit || contentField.value === originalContent;
 }
 
-async function saveProfileChanges(event) {
+async function saveProfileChangesAppSession(event) {
+  // Renamed
   event.preventDefault();
   const saveButton = document.getElementById("saveProfileButton");
   const saveStatus = document.getElementById("saveStatus");
@@ -807,10 +857,12 @@ async function saveProfileChanges(event) {
 
   const newContent = document.getElementById("contentField").value;
   const currentContentId = document.getElementById("contentIdField").value;
-  const token = await getIdTokenAsync(); // Use async version
-  if (!token) {
-    saveStatus.textContent = "Error: Not logged in.";
+
+  // No need for Firebase ID token, backend uses session
+  if (!currentAppUser.isLoggedIn) {
+    saveStatus.textContent = "Error: Not logged in (session).";
     saveStatus.className = "ms-2 text-danger";
+    saveButton.disabled = false; // Re-enable button
     return;
   }
 
@@ -832,8 +884,10 @@ async function saveProfileChanges(event) {
     saveStatus.textContent = "Saved!";
     saveStatus.className = "ms-2 text-success";
     originalContent = newContent;
-    proxies[window.currentProxySubdomain.toLowerCase()][currentContentId] =
-      newContent;
+    window.proxies[window.currentProxySubdomain.toLowerCase()][
+      currentContentId
+    ] = newContent;
+    saveButton.disabled = true;
   } catch (error) {
     saveStatus.textContent = `Error: ${error.message}`;
     saveStatus.className = "ms-2 text-danger";
@@ -845,6 +899,7 @@ async function saveProfileChanges(event) {
 function checkSettingsVisibility() {
   settingsButton = document.getElementById("settingsButton");
   if (!settingsButton) return;
+  // Use app-level loggedInUserId and window.proxyOwnerId (passed from server)
   const canEdit =
     loggedInUserId &&
     window.proxyOwnerId &&
@@ -852,12 +907,11 @@ function checkSettingsVisibility() {
   settingsButton.style.display = canEdit ? "inline-block" : "none";
 }
 
-async function fetchMyProxies() {
-  const token = await getIdTokenAsync(); // Use async version
+async function fetchMyProxiesAppSession() {
   const proxyListElement = document.getElementById("myProxyList");
   if (!proxyListElement) return;
 
-  if (!token) {
+  if (!currentAppUser.isLoggedIn) {
     proxyListElement.innerHTML =
       '<li class="list-group-item">Please log in to see your proxies.</li>';
     return;
@@ -865,12 +919,11 @@ async function fetchMyProxies() {
   proxyListElement.innerHTML = '<li class="list-group-item">Loading...</li>';
 
   try {
-    const response = await fetch("/api/my-proxies", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    // No Authorization header needed if /api/my-proxies uses session
+    const response = await fetch("/api/my-proxies");
     const data = await response.json();
     if (!response.ok || !data.success)
-      throw new Error(data.error || "Failed to fetch");
+      throw new Error(data.error || "Failed to fetch proxies");
     populateProxyList(data.proxies);
   } catch (error) {
     proxyListElement.innerHTML = `<li class="list-group-item text-danger">Error: ${error.message}</li>`;
@@ -1040,44 +1093,62 @@ function testUrl(url) {
 
 // --- DOMContentLoaded Initialization ---
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("DOM Loaded. Initializing chat...");
+  console.log("Chat.js: DOMContentLoaded. Initializing...");
+
   const globalAuthBtn = document.getElementById("globalAuthButton");
   if (globalAuthBtn) {
-    globalAuthBtn.addEventListener("click", handleLoginLogout);
+    globalAuthBtn.addEventListener("click", handleLoginLogoutApp); // Use app-specific handler
   }
 
-  // Initialize Auth Listener using onAuthChanged from auth.js
-  onAuthChanged((user, token) => {
-    // Use the callback provided by auth.js
-    loggedInUserId = user ? user.uid : null;
-    console.log(
-      "Auth State Changed via onAuthChanged. UserID:",
-      loggedInUserId
-    );
-    updateAuthButton(user);
-    checkSettingsVisibility(); // Check if settings icon should be shown
-    // If settings modal is open, refresh its data
-    const settingsModal = document.getElementById("settingsModal");
-    if (settingsModal && bootstrap.Modal.getInstance(settingsModal)?._isShown) {
-      loadProfileDataForSettings();
-      fetchMyProxies();
-    }
-  });
-
-      // Initial state for the global button
-    // Use a small delay to allow auth.js to potentially resolve initial state
-    setTimeout(() => {
-        updateAuthButton(getCurrentUser());
-    }, 100);
-
-  // Cache main elements
-  botImage = document.getElementById("botImage");
+  // Cache main DOM elements
+  botImage = document.getElementById("botImage"); /* ... other elements ... */
   botContainer = document.querySelector(".bot-container");
   botResponseElem = document.getElementById("botResponse");
   userInputElem = document.getElementById("userInput");
   submitAsElement = document.getElementById("submitAs");
   promptElement = document.getElementById("prompt");
-  settingsButton = document.getElementById("settingsButton"); // Cache settings button
+  settingsButton = document.getElementById("settingsButton");
+
+  await ensureAuthInitialized();
+  console.log(
+    "Chat.js: Firebase client initialization confirmed by ensureAuthInitialized()."
+  );
+
+  // Fetch initial application auth state
+  await fetchAndUpdateAppAuthState();
+
+  // Set up a listener for subsequent Firebase client-side auth changes.
+  // These changes (login/logout via popup) should also trigger backend session changes via auth.js.
+  // So, when Firebase state changes, we re-fetch our app's session status.
+  onFirebaseAuthChanged(async (firebaseUser) => {
+    console.log(
+      "Chat.js: onFirebaseAuthChanged triggered. Firebase User:",
+      firebaseUser ? firebaseUser.uid : null,
+      ". Re-fetching app auth status."
+    );
+    await fetchAndUpdateAppAuthState();
+    // If settings modal is open and auth state changed, refresh its data too
+    const settingsModal = document.getElementById("settingsModal");
+    if (
+      settingsModal &&
+      bootstrap.Modal.getInstance(settingsModal)?._isShown &&
+      currentAppUser.isLoggedIn
+    ) {
+      if (loggedInUserId && window.proxyOwnerId === loggedInUserId) {
+        loadProfileDataForSettings();
+        fetchMyProxiesAppSession();
+      } else {
+        // If user is no longer owner or logged out, maybe hide modal or disable parts
+        settingsModalInstance?.hide();
+      }
+    } else if (
+      settingsModal &&
+      bootstrap.Modal.getInstance(settingsModal)?._isShown &&
+      !currentAppUser.isLoggedIn
+    ) {
+      settingsModalInstance?.hide(); // Hide settings if user logs out
+    }
+  });
 
   const transcriptModal = document.getElementById("transcriptModal");
 
@@ -1103,26 +1174,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     );
   }
 
-  // Ensure global `proxies` and `siteId` are available from EJS
+  // EJS variables check
   if (
     typeof window.proxies === "undefined" ||
     typeof window.siteId === "undefined"
   ) {
     console.error(
-      "EJS variables (proxies, siteId) not found on window object!"
+      "Chat.js: EJS variables (proxies, siteId) not found on window object!"
     );
-    // Fallback or early exit if critical data is missing
     return;
   }
-  // Make them available to the script scope
-  window.proxies = window.proxies || {}; // Ensure it's an object
-  window.siteId = window.siteId || "meet"; // Default if not set
+  window.proxies = window.proxies || {};
+  window.siteId = window.siteId || "meet";
 
   initAudioContext();
-  setupSettingsModal();
-  document
-    .getElementById("authButton")
-    ?.addEventListener("click", handleLoginLogout);
+  setupSettingsModal(); // This will now use app-level loggedInUserId
+
   document
     .getElementById("ttsButton")
     ?.addEventListener("click", toggleTtsState);
@@ -1222,16 +1289,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  await preloadImages(window.proxies); // Use window.proxies
-  // Initial avatar setup (use window.currentProxySubdomain from EJS)
+  await preloadImages(window.proxies);
   updateAvatar(
     window.currentProxySubdomain || Object.keys(window.proxies)[0] || "Guest",
     "friendly"
   );
   toggleResponseContainer();
   enableSubmitButtons();
-
-  // Set initial submitAs
   if (submitAsElement) submitAs = submitAsElement.value;
 
   const feedbackModalElement = document.getElementById("feedbackModal");
@@ -1258,6 +1322,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           })
           .catch((err) => console.error("Feedback error:", err));
       });
+      
   }
 
   console.log("Chat.js Initialized.");

@@ -3,136 +3,155 @@ import { auth } from './firebase.js';
 import {
   GoogleAuthProvider,
   signInWithPopup,
-  signOut,
+  signOut as firebaseSignOut, // Renamed to avoid conflict
   onAuthStateChanged as firebaseOnAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/9.6.10/firebase-auth.js";
 
-let currentUser = null;
-let idToken = null;
-let authStateInitialized = false; // True after the first onAuthStateChanged event
+let currentUser = null; // Firebase client-side user
+let idToken = null;   // Firebase ID token
+let authStateInitialized = false;
 const authStateChangeCallbacks = [];
 
-// Promise that resolves when the first auth state is known
 let authInitializationResolver;
 const authInitializationPromise = new Promise(resolve => {
     authInitializationResolver = resolve;
 });
 
-async function updateToken(forceRefresh = false) {
-    if (auth.currentUser) {
+async function updateToken(user, forceRefresh = false) {
+    if (user) { // Pass user object
         try {
-            idToken = await auth.currentUser.getIdToken(forceRefresh);
+            idToken = await user.getIdToken(forceRefresh);
         } catch (error) {
             idToken = null;
-            console.error("auth.js: Error updating token:", error);
+            console.error("auth.js: Error updating Firebase ID token:", error);
         }
     } else {
         idToken = null;
     }
 }
 
-// Main Firebase Auth Listener
 firebaseOnAuthStateChanged(auth, async (user) => {
-    console.log("auth.js: Firebase onAuthStateChanged triggered. User:", user ? user.uid : null);
-    currentUser = user;
-    await updateToken(true); 
+    console.log("auth.js: Firebase onAuthStateChanged triggered. Firebase User:", user ? user.uid : null);
+    currentUser = user; // This is the Firebase user object
+    await updateToken(currentUser, true); 
 
     if (!authStateInitialized) {
         authStateInitialized = true;
         if (authInitializationResolver) {
-            authInitializationResolver(); // Resolve the promise
+            authInitializationResolver(); 
             authInitializationResolver = null; 
         }
     }
 
-    // Notify all subscribed callbacks
     authStateChangeCallbacks.forEach(callback => {
         try {
-            callback(currentUser, idToken);
+            callback(currentUser, idToken); // Pass Firebase user and ID token
         } catch (e) {
             console.error("auth.js: Error in an onAuthChanged callback:", e);
         }
     });
 
-    document.dispatchEvent(new CustomEvent('authStateChangedGlobal', {
-        detail: { loggedIn: !!user, user: user, token: idToken }
+    // Note: This event dispatches Firebase client-side auth state.
+    // Your app-level auth state will come from /api/auth/status.
+    document.dispatchEvent(new CustomEvent('firebaseAuthStateChangedGlobal', {
+        detail: { firebaseUser: user, firebaseIdToken: idToken }
     }));
 });
 
-// Export this function so other modules can wait for initialization
 export function ensureAuthInitialized() {
     return authInitializationPromise;
 }
 
-export function getCurrentUser() {
+export function getCurrentFirebaseUser() { // Renamed for clarity
     return currentUser;
 }
 
 export async function getIdTokenAsync(forceRefresh = false) {
-    if (!auth.currentUser) {
+    if (!currentUser) {
         idToken = null;
         return null;
     }
     if (!idToken || forceRefresh) {
-        await updateToken(true);
+        await updateToken(currentUser, true);
     }
     return idToken;
 }
 
-export function handleGoogleLogin() {
+export async function handleGoogleLogin() {
     const provider = new GoogleAuthProvider();
-    return signInWithPopup(auth, provider)
-        .then((result) => {
-            console.log("auth.js: Google login successful for user:", result.user.uid);
-            // onAuthStateChanged will handle currentUser and idToken updates
-            return result.user;
-        })
-        .catch((error) => {
-            console.error("auth.js: Google login error:", error.code, error.message);
-            throw error; 
+    try {
+        const result = await signInWithPopup(auth, provider);
+        console.log("auth.js: Firebase Google login successful for user:", result.user.uid);
+        
+        const firebaseIdToken = await result.user.getIdToken();
+        // After successful Firebase login, establish backend session
+        const sessionResponse = await fetch('/api/auth/session-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ firebaseIdToken: firebaseIdToken })
         });
-}
+        const sessionData = await sessionResponse.json();
+        if (!sessionResponse.ok || !sessionData.success) {
+            console.error("auth.js: Failed to establish backend session:", sessionData.error || 'Unknown error');
+            // Optionally sign out Firebase user if backend session fails critically
+            // await firebaseSignOut(auth); 
+            throw new Error(sessionData.error || "Failed to establish backend session.");
+        }
+        console.log("auth.js: Backend session established successfully.");
+        // The firebaseOnAuthStateChanged will have updated currentUser and idToken.
+        // The app should now rely on /api/auth/status for its primary logged-in state.
+        return result.user; // Return Firebase user object
 
-export function handleLogout() {
-    return signOut(auth)
-        .then(() => {
-            console.log("auth.js: Logout successful.");
-            // onAuthStateChanged will handle currentUser and idToken updates
-        })
-        .catch((error) => {
-            console.error("auth.js: Logout error:", error);
-            throw error;
-        });
-}
-
-export function onAuthChanged(callback) {
-    if (typeof callback !== 'function') {
-        console.error("auth.js: Invalid callback provided to onAuthChanged");
-        return () => {}; // Return a no-op unsubscribe function
+    } catch (error) {
+        console.error("auth.js: Google login or backend session establishment error:", error);
+        throw error; 
     }
-    
+}
+
+export async function handleLogout() {
+    try {
+        // Sign out from Firebase client-side
+        await firebaseSignOut(auth);
+        console.log("auth.js: Firebase logout successful.");
+        currentUser = null; // Clear client-side Firebase user state
+        idToken = null;
+
+        // Then, destroy backend session
+        const response = await fetch('/api/auth/session-logout', { method: 'POST' });
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            console.error("auth.js: Failed to destroy backend session:", data.error || 'Unknown error');
+            // Proceed with client-side logout anyway
+        } else {
+            console.log("auth.js: Backend session destroyed successfully.");
+        }
+        // firebaseOnAuthStateChanged will fire with user: null
+    } catch (error) {
+        console.error("auth.js: Logout error:", error);
+        throw error;
+    }
+}
+
+export function onFirebaseAuthChanged(callback) { // Renamed for clarity
+    if (typeof callback !== 'function') {
+        console.error("auth.js: Invalid callback provided to onFirebaseAuthChanged");
+        return () => {};
+    }
     authStateChangeCallbacks.push(callback);
-    
-    // If auth state is already initialized, call back immediately with the current state.
     if (authStateInitialized) {
-        console.log("auth.js: Auth state already initialized, calling onAuthChanged callback immediately for new subscriber with user:", currentUser ? currentUser.uid : null);
-        // Use queueMicrotask to allow the calling script to finish its current execution block
-        // before the callback is invoked, preventing potential re-entrancy issues.
+        console.log("auth.js: Firebase auth already initialized, calling onFirebaseAuthChanged callback immediately for new subscriber with user:", currentUser ? currentUser.uid : null);
         queueMicrotask(() => {
             try {
                 callback(currentUser, idToken);
             } catch (e) {
-                console.error("auth.js: Error in immediate onAuthChanged callback (for initialized state):", e);
+                console.error("auth.js: Error in immediate onFirebaseAuthChanged callback:", e);
             }
         });
     }
-
-    // Return an unsubscribe function
     return () => {
         const index = authStateChangeCallbacks.indexOf(callback);
-        if (index > -1) {
-            authStateChangeCallbacks.splice(index, 1);
-        }
+        if (index > -1) authStateChangeCallbacks.splice(index, 1);
     };
 }
 
