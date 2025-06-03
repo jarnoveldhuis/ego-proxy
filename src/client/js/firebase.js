@@ -7,13 +7,13 @@ import { getFirestore } from "https://www.gstatic.com/firebasejs/9.6.10/firebase
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-  measurementId: process.env.FIREBASE_MEASUREMENT_ID
+  apiKey: "AIzaSyDLMiN7RFXBk745Av7Y6K8STTogP-OpMp4",
+  authDomain: "ego-proxy.firebaseapp.com",
+  projectId: "ego-proxy",
+  storageBucket: "ego-proxy.firebasestorage.app",
+  messagingSenderId: "500271883351",
+  appId: "1:500271883351:web:5742cddcddd9e62b5cef12",
+  measurementId: "G-TEPXZ4C3NE"
 };
 
 // Initialize Firebase
