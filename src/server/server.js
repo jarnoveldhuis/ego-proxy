@@ -1,4 +1,5 @@
 // 1. IMPORTS AND CONFIGURATIONS
+
 const express = require("express");
 const session = require("express-session");
 const multer = require("multer");
@@ -40,7 +41,15 @@ const CT = process.env.CT;
 let globalDataStore = {};
 let gptModel = process.env.NODE_ENV === "development" ? "gpt-4o" : "gpt-4o";
 let proxyList = [];
+
+
+console.log(`SERVER_STARTUP: Current NODE_ENV: '${process.env.NODE_ENV}'`);
 const IN_PROD = process.env.NODE_ENV === "production";
+console.log(`SERVER_STARTUP: IN_PROD evaluated to: ${IN_PROD}`);
+console.log(`SERVER_STARTUP: DEV_HOST is: '${process.env.DEV_HOST}'`);
+const calculatedDomain = IN_PROD ? ".ego-proxy.com" : (process.env.DEV_HOST === 'localhost' ? 'localhost' : '.myapp.local');
+console.log(`SERVER_STARTUP: Calculated cookie domain will be: '${calculatedDomain}'`);
+
 app.use(
   session({
     secret: process.env.BACKEND_SESSION_KEY || "BACKEND_SESSION_KEY",
