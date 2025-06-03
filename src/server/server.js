@@ -20,6 +20,7 @@ const http = require("http");
 
 // Constants
 const app = express();
+app.set('trust proxy', 1); 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const port = process.env.PORT || 3001;
