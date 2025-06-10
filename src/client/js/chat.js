@@ -237,7 +237,7 @@ function updateAvatar(avatarNameToSet, reaction) {
     }
     const imagePath = proxyData[reactionToUse][0].url;
     botImage.src = imagePath;
-    botContainer.style.backgroundImage = `url(${imagePath})`;
+    // botContainer.style.backgroundImage = `url(${imagePath})`;
   } else {
     // console.warn(`updateAvatar: Proxy key '${proxyKey}' not found or window.proxies missing.`);
     botImage.src = "/img/guest.png";
@@ -771,10 +771,13 @@ function setupSettingsModal() {
   settingsButton = document.getElementById("settingsButton");
   if (settingsButton) {
     settingsButton.addEventListener("click", async () => {
-      // loggedInUserId is now updated by fetchAndUpdateAppAuthState
       if (loggedInUserId && window.proxyOwnerId === loggedInUserId) {
-        loadProfileDataForSettings(); // This may need to use app session for fetching
-        fetchMyProxiesAppSession(); // Changed name to reflect it uses app session
+        loadProfileDataForSettings(); 
+        fetchMyProxiesAppSession(); 
+        
+        // HAL: NEW - Populate persona handles when modal opens
+        populatePersonaHandles();
+
         settingsModalInstance.show();
       } else if (loggedInUserId && window.proxyOwnerId !== loggedInUserId) {
         alert("You must be the owner of this proxy to change settings.");
@@ -784,24 +787,109 @@ function setupSettingsModal() {
     });
   }
 
+  // HAL: NEW - Add event listener for the new Ego Proxy form
+  const egoProxyForm = document.getElementById('egoProxyHandlesForm');
+  if (egoProxyForm) {
+      egoProxyForm.addEventListener('submit', handlePersonaUpdate);
+  }
+
+  // ... (keep the other event listeners for contextSelect, editForm, etc.)
   document
     .getElementById("contextSelect")
     ?.addEventListener("change", loadProfileDataForSettings);
   document
     .getElementById("editForm")
-    ?.addEventListener("submit", saveProfileChangesAppSession); // Changed name
+    ?.addEventListener("submit", saveProfileChangesAppSession);
   document
     .getElementById("beginTrainingButton")
     ?.addEventListener("click", startTrainingSession);
   document
     .getElementById("createNewProxyFromSettings")
-    ?.addEventListener("click", () => (window.location.href = "/create"));
+    ?.addEventListener("click", () => (window.location.href = "/")); // HAL FIX: Changed to "/" which is the create page
   document
     .getElementById("contentField")
     ?.addEventListener("input", checkSaveButtonState);
   document
     .getElementById("copyShareUrlButton")
     ?.addEventListener("click", copyUrl);
+}
+
+function populatePersonaHandles() {
+  const currentProxyData = window.proxies[window.currentProxySubdomain.toLowerCase()];
+  const handles = currentProxyData?.publicPersonaData || [];
+
+  // Helper to set value if input exists
+  const setInputValue = (id, platform) => {
+      const input = document.getElementById(id);
+      if (input) {
+          const data = handles.find(p => p && p.platform === platform);
+          input.value = data ? data.handle || '' : '';
+      }
+  };
+
+  setInputValue('xHandle', 'X');
+  setInputValue('redditHandle', 'Reddit');
+  setInputValue('linkedinHandle', 'LinkedIn');
+  setInputValue('instagramHandle', 'Instagram');
+  setInputValue('tiktokHandle', 'TikTok');
+  setInputValue('githubHandle', 'GitHub');
+}
+
+async function handlePersonaUpdate(event) {
+  event.preventDefault();
+  const saveButton = document.getElementById('saveHandlesButton');
+  const statusSpan = document.getElementById('personaUpdateStatus');
+  if (!saveButton || !statusSpan) return;
+
+  saveButton.disabled = true;
+  statusSpan.textContent = 'Updating... This may take a moment.';
+  statusSpan.className = 'ms-2 text-info';
+
+  // Helper to get value from input
+  const getInputValue = (id) => document.getElementById(id)?.value || '';
+
+  const proxyName = window.currentProxySubdomain;
+
+  try {
+      const response = await fetch(`/api/proxy/${proxyName}/update-persona`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+              xHandle: getInputValue('xHandle'),
+              redditHandle: getInputValue('redditHandle'),
+              linkedinHandle: getInputValue('linkedinHandle'),
+              instagramHandle: getInputValue('instagramHandle'),
+              tiktokHandle: getInputValue('tiktokHandle'),
+              githubHandle: getInputValue('githubHandle')
+          })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+          throw new Error(data.error || 'Failed to update persona.');
+      }
+
+      statusSpan.textContent = 'Persona updated successfully!';
+      statusSpan.className = 'ms-2 text-success';
+      
+      // Update the local proxy data cache
+      if(window.proxies[proxyName.toLowerCase()]) {
+          window.proxies[proxyName.toLowerCase()].meet = data.newProfile;
+          window.proxies[proxyName.toLowerCase()].publicPersonaData = data.details;
+      }
+      
+      loadProfileDataForSettings();
+
+  } catch (error) {
+      console.error("Error updating persona:", error);
+      statusSpan.textContent = `Error: ${error.message}`;
+      statusSpan.className = 'ms-2 text-danger';
+  } finally {
+      setTimeout(() => {
+          saveButton.disabled = false;
+          statusSpan.textContent = '';
+      }, 3000);
+  }
 }
 
 function loadProfileDataForSettings() {

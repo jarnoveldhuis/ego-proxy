@@ -13,21 +13,25 @@ body {
 #trainingProgressBar {
   color: white;
 }
-/* #botImage {
-  background-size: contain; 
-  transition: opacity .25s ease-in-out;
-} */
+
+#botImage {
+  display: block; /* Good practice for images */
+  width: 100%;    /* Make it fill the container's width */
+  height: auto;   /* Maintain aspect ratio */
+  /* If you want it to fill a square and crop, you'd need object-fit: cover
+     and .bot-container would need a fixed height, e.g., 200px. */
+}
 
 .bot-container {
-  background-size: contain; /* Change this line */
-
-  /* transition: background 1s ease-in-out; */
-  position: relative;
   width: 200px;
+  /* If you want a square container for the image, set height: 200px; here */
+  /* overflow: hidden; */ /* Use if #botImage might exceed dimensions and you want to clip */
+  position: relative;
   margin: auto;
-  display: flex;
+  display: flex; /* Can keep if useful for other layout aspects */
   flex-direction: column;
   gap: 2px;
+  /* Remove background-size: contain; if you're not using background-image here */
 }
 
 .response-container {
@@ -47,7 +51,7 @@ body {
   justify-content: center;
   height: 100vh;
   max-width: 500px;
-  overflow-y: auto;
+  /* overflow-y: auto; */
   /* Adjust the height as needed */
 }
 

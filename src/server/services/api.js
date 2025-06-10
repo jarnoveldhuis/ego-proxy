@@ -3,6 +3,8 @@ const { v4: uuidv4 } = require("uuid");
 const { bucket } = require("./firebase"); // Assuming firebase.js is correctly set up
 require("dotenv").config();
 const FormData = require('form-data'); // Import FormData
+// At the top of api.js
+const { createPayload } = require('./utils');
 
 // API Configuration
 const OPENAI_API_ENDPOINT =
@@ -53,8 +55,11 @@ async function uploadBase64ToFirebase(base64Image) {
   }
 }
 
+
+
 // OpenAI API Calls
 const openai = {
+  
   async chatCompletion(payload) {
     try {
       const response = await axios.post(OPENAI_API_ENDPOINT, payload, {
@@ -67,6 +72,53 @@ const openai = {
     }
   },
 
+  async buildPersonaFromHandles(handles) {
+    if (!handles || !Array.isArray(handles)) {
+        return [];
+    }
+  
+    const personaPromises = handles
+        .filter(h => h.handle) // Only process handles that were provided
+        .map(async (h) => {
+            const { platform, handle } = h;
+            console.log(`Building persona for ${platform} handle: ${handle}`);
+            
+            // The LLM acts as our researcher. It will perform the search and analysis.
+            const researcherSystemPrompt = `You are a world-class investigative researcher and psychologist. Your task is to analyze a person's public online presence based on a social media handle and produce a structured JSON output.
+  
+            1.  First, conduct a search for the provided handle on the specified platform.
+            2.  Analyze the content of the public posts you find.
+            3.  Based on your analysis, determine your confidence level (High, Medium, Low) that you have found the correct, active, and singular public profile for this handle.
+            4.  Create a concise, one-paragraph psychological summary of the persona projected through these posts. Focus on tone, recurring themes, and communication style.
+            5.  Return ONLY a single, minified JSON object with no other text or explanation.
+  
+            The JSON object must have this exact structure:
+            {"platform":"${platform}","handle":"${handle}","confidence":"<High/Medium/Low>","summary":"<Your one-paragraph summary>"}
+            `;
+            
+            const userQuery = `Analyze the ${platform} user with the handle: "${handle}"`;
+            const payload = createPayload(researcherSystemPrompt, userQuery); 
+  
+            try {
+                const responseString = await this.chatCompletion(payload);
+                // The LLM should return a JSON string. We parse it to ensure it's valid.
+                const personaData = JSON.parse(responseString);
+                return personaData;
+            } catch (error) {
+                console.error(`Failed to build persona for ${handle} on ${platform}:`, error);
+                // Return a failure object so the frontend knows it didn't work
+                return {
+                    platform: platform,
+                    handle: handle,
+                    confidence: "Low",
+                    summary: "Could not retrieve or analyze data for this handle."
+                };
+            }
+        });
+  
+    return Promise.all(personaPromises);
+  }
+  ,
   async generateImage(prompt) { // For generating new images from scratch
     try {
       const response = await axios.post(

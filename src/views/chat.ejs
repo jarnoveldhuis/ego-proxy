@@ -163,6 +163,9 @@
                             <button class="nav-link active" id="profile-settings-tab" data-bs-toggle="tab" data-bs-target="#profile-settings" type="button" role="tab">Profile & Training</button>
                         </li>
                         <li class="nav-item" role="presentation">
+                          <button class="nav-link" id="ego-proxy-settings-tab" data-bs-toggle="tab" data-bs-target="#ego-proxy-settings" type="button" role="tab">Persona</button>
+                      </li>
+                        <li class="nav-item" role="presentation">
                             <button class="nav-link" id="my-proxies-tab" data-bs-toggle="tab" data-bs-target="#my-proxies-content" type="button" role="tab">My Proxies</button>
                         </li>
                          <!-- <li class="nav-item" role="presentation">
@@ -204,7 +207,45 @@
                             </ul>
                             <a href="/create" class="btn btn-success mt-3" id="createNewProxyFromSettings">Create New Proxy</a>
                         </div>
+                        <div class="tab-pane fade p-3" id="ego-proxy-settings" role="tabpanel">
+                          <h5>Ego Proxy Persona</h5>
+                          <p class="text-muted small">Enter your public social media handles. We will search for public posts to build your Ego Proxy's personality. This proxy will have no access to your private data.</p>
+                          
+                          <form id="egoProxyHandlesForm">
+                            <div class="mb-3">
+                                <label for="xHandle" class="form-label"><i class="fab fa-twitter me-2"></i>X / Twitter Handle</label>
+                                <input type="text" class="form-control" id="xHandle" name="xHandle" placeholder="@username">
+                            </div>
                         
+                            <div class="mb-3">
+                                <label for="instagramHandle" class="form-label"><i class="fab fa-instagram me-2"></i>Instagram Handle</label>
+                                <input type="text" class="form-control" id="instagramHandle" name="instagramHandle" placeholder="username">
+                            </div>
+                        
+                            <div class="mb-3">
+                                <label for="tiktokHandle" class="form-label"><i class="fab fa-tiktok me-2"></i>TikTok Handle</label>
+                                <input type="text" class="form-control" id="tiktokHandle" name="tiktokHandle" placeholder="@username">
+                            </div>
+                        
+                            <div class="mb-3">
+                                <label for="linkedinHandle" class="form-label"><i class="fab fa-linkedin me-2"></i>LinkedIn Handle</label>
+                                <input type="text" class="form-control" id="linkedinHandle" name="linkedinHandle" placeholder="/in/username">
+                            </div>
+                        
+                            <div class="mb-3">
+                                <label for="redditHandle" class="form-label"><i class="fab fa-reddit me-2"></i>Reddit Handle</label>
+                                <input type="text" class="form-control" id="redditHandle" name="redditHandle" placeholder="u/username">
+                            </div>
+                        
+                            <div class="mb-3">
+                                <label for="githubHandle" class="form-label"><i class="fab fa-github me-2"></i>GitHub Handle</label>
+                                <input type="text" class="form-control" id="githubHandle" name="githubHandle" placeholder="username">
+                            </div>
+                        
+                            <button type="submit" class="btn btn-primary" id="saveHandlesButton">Update Persona</button>
+                            <span id="personaUpdateStatus" class="ms-2"></span>
+                        </form>
+                      </div>
                         <div class="tab-pane fade p-3" id="share-content" role="tabpanel">
                              <h6>Share This Proxy:</h6>
                              <div id="parameters">

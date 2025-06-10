@@ -1,5 +1,6 @@
 // 1. IMPORTS AND CONFIGURATIONS
 
+const { createPayload } = require('./services/utils');
 const express = require("express");
 const session = require("express-session");
 const multer = require("multer");
@@ -20,7 +21,7 @@ const http = require("http");
 
 // Constants
 const app = express();
-app.set('trust proxy', 1); 
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const port = process.env.PORT || 3001;
@@ -59,18 +60,10 @@ app.use(
     cookie: {
       httpOnly: true, // Prevents client-side JS from accessing the cookie
       secure: IN_PROD, // True in production (requires HTTPS)
-      // For cross-subdomain cookies:
-      // Production: '.yourdomain.com' (e.g., '.ego-proxy.com')
-      // Development: 'localhost' might work for localhost and its direct subdomains on some browsers.
-      // For more robust local cross-subdomain testing, consider editing your /etc/hosts file
-      // to use something like 'local.app' and 'jarno.local.app' mapped to 127.0.0.1,
-      // then set domain: '.local.app'.
       domain: IN_PROD ? ".ego-proxy.com" : ".myapp.local", // Adjust for your actual production domain
       path: "/", // Cookie available across all paths
       maxAge: 1000 * 60 * 60 * 24 * 14, // e.g., 14 days
     },
-    // For production, you'd add a persistent store here, e.g.:
-    // store: new RedisStore({ client: redisClient }),
   })
 );
 
@@ -80,7 +73,6 @@ app.use(express.urlencoded({ limit: "25mb", extended: true }));
 app.use((req, res, next) => {
   if (req.session && req.session.userId) {
     req.appUser = {
-      // Use a distinct name like appUser to avoid collision with Firebase req.user
       uid: req.session.userId,
       email: req.session.email,
       isLoggedIn: true,
@@ -99,8 +91,6 @@ app.use(express.static(path.join(__dirname, "../client")));
 const TIMEOUT_DURATION = 30000;
 app.use((req, res, next) => {
   if (req.session && req.session.userId) {
-    // You can attach a simplified user object to req if needed for templates/other middleware
-    // For now, just knowing req.session.userId exists is enough for basic auth check
   }
   const timeout = setTimeout(() => {
     if (!res.headersSent) {
@@ -132,16 +122,14 @@ let currentSpeaker = "";
 let voice = "";
 const transcriptThreshold = 1500;
 
-// Middleware to verify Firebase ID token
 async function verifyFirebaseToken(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    // Don't block GET page loads, req.firebaseUser will be undefined
     return next();
   }
   const idToken = authHeader.split("Bearer ")[1];
   try {
-    req.firebaseUser = await adminAuth.verifyIdToken(idToken); // Use req.firebaseUser to avoid clash
+    req.firebaseUser = await adminAuth.verifyIdToken(idToken);
     console.log(
       `Firebase Token verified for user: ${req.firebaseUser.uid} for path ${req.path}`
     );
@@ -150,19 +138,15 @@ async function verifyFirebaseToken(req, res, next) {
       "Error verifying Firebase ID token for path " + req.path + ":",
       error.message
     );
-    // Don't block, req.firebaseUser will be undefined
   }
   return next();
 }
 
 async function ensureAuthenticatedSession(req, res, next) {
   if (req.session && req.session.userId) {
-    // Attach a user object to req for easier access in route handlers
-    // This req.user will be different from the one set by verifyFirebaseToken
     req.userFromSession = {
       uid: req.session.userId,
       email: req.session.email,
-      // Add other details if stored in session
     };
     return next();
   }
@@ -226,8 +210,6 @@ app.post("/api/auth/session-logout", (req, res) => {
         .status(500)
         .json({ success: false, error: "Failed to logout." });
     }
-    // The cookie name 'connect.sid' is the default for express-session.
-    // If you configured a different name in session options, use that name here.
     res.clearCookie("connect.sid", {
       domain: IN_PROD
         ? ".ego-proxy.com"
@@ -243,7 +225,6 @@ app.post("/api/auth/session-logout", (req, res) => {
 
 // 3. APPLICATION ROUTES
 
-// Home Route (keep existing)
 app.get("/", async (req, res) => {
   const fullRequestHost = req.get("host");
   const currentHostname = req.hostname;
@@ -262,10 +243,9 @@ app.get("/", async (req, res) => {
   if (IN_PROD && protocol !== "https") {
     protocol = "https";
   }
-  // Pass appUser (derived from session) to the template
   const templateData = {
     proxyDomain: fullRequestHost,
-    appUser: req.appUser, // Contains { uid, email, isLoggedIn } or { isLoggedIn: false }
+    appUser: req.appUser,
   };
 
   if (
@@ -273,7 +253,6 @@ app.get("/", async (req, res) => {
     !req.path.startsWith("/public") &&
     !req.path.startsWith("/client")
   ) {
-    // Existing logic to redirect if a specific proxy subdomain is accessed
     try {
       console.log(
         `Home route: Proxy subdomain '${accessedSubdomain}' detected. Attempting redirect.`
@@ -308,13 +287,10 @@ app.get("/", async (req, res) => {
     console.log(
       "Home route: Rendering create page. Client-side will use /api/auth/status."
     );
-    // Pass appUser which contains isLoggedIn status. create.js will use /api/auth/status
-    // but this initial status can prevent UI flicker.
     res.render("create", templateData);
   }
 });
 
-// Dashboard Route - now uses session for primary auth check
 app.get("/dashboard", ensureAuthenticatedSession, async (req, res) => {
   const fullRequestHost = req.get("host");
   let protocol = req.protocol;
@@ -326,12 +302,9 @@ app.get("/dashboard", ensureAuthenticatedSession, async (req, res) => {
   }
 
   if (!req.user) {
-    // If verifyFirebaseToken somehow didn't catch this (e.g., if modified)
-    // or if you want to redirect non-logged-in users trying to access /dashboard directly
-    return res.redirect("/"); // Or to a login page
+    return res.redirect("/");
   }
 
-  // User is logged in, fetch and render their dashboard
   try {
     const userId = req.user.uid;
     const snapshot = await db
@@ -342,7 +315,6 @@ app.get("/dashboard", ensureAuthenticatedSession, async (req, res) => {
     snapshot.forEach((doc) => {
       const data = doc.data();
       const proxySub = data.Proxy.toLowerCase();
-      // ... construct meetUrl carefully based on IN_PROD and dev domain setup ...
       let baseDomainForLinks = IN_PROD
         ? "ego-proxy.com"
         : process.env.DEV_COOKIE_DOMAIN || "localhost";
@@ -351,7 +323,7 @@ app.get("/dashboard", ensureAuthenticatedSession, async (req, res) => {
         baseDomainForLinks === "localhost" &&
         req.get("host").includes(":")
       ) {
-        baseDomainForLinks = req.get("host").split(":")[0]; // e.g. jarno.localhost from jarno.localhost:3001
+        baseDomainForLinks = req.get("host").split(":")[0];
       }
 
       userProxies.push({
@@ -374,7 +346,7 @@ app.get("/dashboard", ensureAuthenticatedSession, async (req, res) => {
       `User ${userId} rendering dashboard with ${userProxies.length} proxies.`
     );
     res.render("dashboard", {
-      appUser: req.appUser, // Pass session-derived user
+      appUser: req.appUser,
       proxies: userProxies,
       proxyDomain: fullRequestHost,
     });
@@ -388,11 +360,8 @@ app.get("/dashboard", ensureAuthenticatedSession, async (req, res) => {
   }
 });
 
-// SiteId Route - MODIFIED
-// In src/server/server.js
-
 app.get("/:siteId", verifyFirebaseToken, async (req, res) => {
-  const siteIdParam = req.params.siteId; // Use a different name to avoid conflict with 'siteId' key
+  const siteIdParam = req.params.siteId;
 
   if (
     !siteIdParam ||
@@ -410,7 +379,6 @@ app.get("/:siteId", verifyFirebaseToken, async (req, res) => {
       ? parts[0]
       : "";
 
-  // Determine the current proxy's identifier (lowercase) - prioritize host, fallback to path
   const currentProxyIdentifier = (
     subdomainFromHost || siteIdParam
   ).toLowerCase();
@@ -436,14 +404,13 @@ app.get("/:siteId", verifyFirebaseToken, async (req, res) => {
       guests
     );
     if (!data) {
-      // console.log(`No matching records for siteId: ${siteIdParam}, subdomain: ${currentProxyIdentifier}`);
       return res.render("create", {
         proxyDomain: req.get("host"),
         appUser: req.appUser,
       });
     }
 
-    data.transcriptThreshold = transcriptThreshold; // Assuming this is defined
+    data.transcriptThreshold = transcriptThreshold;
     data.hasShareParam = req.query.hasOwnProperty("share");
     if (typeof data.proxies !== "object" || data.proxies === null)
       data.proxies = {};
@@ -456,11 +423,7 @@ app.get("/:siteId", verifyFirebaseToken, async (req, res) => {
     data.currentProxySubdomain = currentProxyIdentifier;
     data.proxyOwnerId = mainProxyData ? mainProxyData.userId : null;
 
-    // Crucially, pass the application user (from session) to the template
     data.appUser = req.appUser;
-    // The client-side chat.js will use /api/auth/status if it needs to confirm,
-    // but this initial appUser helps determine owner vs. guest views/permissions.
-    // loggedInUserId was previously from Firebase token, now should use appUser.uid
     data.loggedInUserId =
       req.appUser && req.appUser.isLoggedIn ? req.appUser.uid : null;
 
@@ -476,7 +439,7 @@ app.get("/:siteId", verifyFirebaseToken, async (req, res) => {
     );
 
     data.appUser = req.appUser;
-    data.loggedInUserId = req.appUser.isLoggedIn ? req.appUser.uid : null; // Use appUser
+    data.loggedInUserId = req.appUser.isLoggedIn ? req.appUser.uid : null;
 
     res.render("chat", data);
   } catch (err) {
@@ -491,10 +454,67 @@ app.get("/:siteId", verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// API: /api/my-proxies - Already updated to use ensureAuthenticatedSession, which is good.
+// HAL: NEW ROUTE to update persona from social handles
+app.post('/api/proxy/:proxyName/update-persona', ensureAuthenticatedSession, async (req, res) => {
+  const { proxyName } = req.params;
+  const userId = req.appUser.uid;
+
+  // Destructure all possible handles from the request body
+  const { 
+      xHandle, 
+      redditHandle, 
+      linkedinHandle,
+      instagramHandle,
+      tiktokHandle,
+      githubHandle
+  } = req.body;
+
+  try {
+      const proxyData = await findProxyDataByName(proxyName);
+      if (!proxyData || proxyData.userId !== userId) {
+          return res.status(403).json({ error: 'Permission denied.' });
+      }
+
+      // The beauty of our design is that we just add more items to this array.
+      // The buildPersonaFromHandles function handles the rest.
+      const personaSummaries = await openai.buildPersonaFromHandles([
+          { platform: 'X', handle: xHandle },
+          { platform: 'Reddit', handle: redditHandle },
+          { platform: 'LinkedIn', handle: linkedinHandle },
+          { platform: 'Instagram', handle: instagramHandle },
+          { platform: 'TikTok', handle: tiktokHandle },
+          { platform: 'GitHub', handle: githubHandle }
+      ]);
+
+      const newPersonalityProfile = personaSummaries
+          .filter(p => p && p.confidence !== 'Low' && p.summary)
+          .map(p => `On ${p.platform}, my persona is: "${p.summary}"`)
+          .join(' \n\n');
+      
+      if (!newPersonalityProfile) {
+          throw new Error("Could not generate a new persona. The provided handles may be private, invalid, or have no public activity.");
+      }
+
+      const proxyRef = db.collection('proxies').doc(proxyData.id);
+      await proxyRef.update({
+          meet: newPersonalityProfile,
+          publicPersonaData: personaSummaries,
+          lastPersonaUpdate: new Date()
+      });
+
+      console.log(`Successfully updated persona for ${proxyName} owned by ${userId}`);
+      res.json({ success: true, newProfile: newPersonalityProfile, details: personaSummaries });
+
+  } catch (error) {
+      console.error(`Error updating persona for ${proxyName}:`, error);
+      res.status(500).json({ error: error.message || 'Failed to update persona.' });
+  }
+});
+
+
 app.get("/api/my-proxies", ensureAuthenticatedSession, async (req, res) => {
   try {
-    const userId = req.appUser.uid; // Use uid from req.appUser set by ensureAuthenticatedSession
+    const userId = req.appUser.uid;
     const snapshot = await db
       .collection("proxies")
       .where("userId", "==", userId)
@@ -521,21 +541,14 @@ app.get("/api/my-proxies", ensureAuthenticatedSession, async (req, res) => {
   }
 });
 
-// Proxy Update Route - MODIFIED
 app.post(
   "/update-proxy",
   apiLimiter,
   ensureAuthenticatedSession,
   async (req, res) => {
-    // req.appUser is now available from ensureAuthenticatedSession
     const loggedInUserId = req.appUser.uid;
-
-    const parts = req.hostname.split("."); // This gets hostname of the server, not necessarily the proxy being updated if it's via API
-    // If this API is meant to be called from a proxy's page, the subdomain might be in req.body or a param
-    // For now, assuming 'subdomain' refers to the proxy to be updated and is determined correctly
-    const { contentId, content, proxyNameToUpdate } = req.body; // Expect proxyNameToUpdate if not derived from host
-
-    // Determine the proxy to update, e.g., from proxyNameToUpdate or if API is on proxy's host
+    const parts = req.hostname.split(".");
+    const { contentId, content, proxyNameToUpdate } = req.body;
     const targetSubdomain =
       proxyNameToUpdate ||
       (parts.length > 1 && parts[0] !== "www" && parts[0] !== "ego-proxy"
@@ -587,7 +600,6 @@ app.post(
   }
 );
 
-// Chat Route (keep existing, but ensure it doesn't bypass ownership for profile updates if those happen here)
 app.post("/ask/", apiLimiter, ensureAuthenticatedSession, async (req, res) => {
   const loggedInUserId = req.user ? req.user.uid : null;
   const {
@@ -632,7 +644,7 @@ app.post("/ask/", apiLimiter, ensureAuthenticatedSession, async (req, res) => {
     const proxies = dataForSiteId.proxies || {};
     const context = dataForSiteId.context || {};
     currentSpeaker = submitTo;
-    const currentProxy = proxies[currentSpeaker.toLowerCase()] || {}; // Ensure lowercase access
+    const currentProxy = proxies[currentSpeaker.toLowerCase()] || {};
 
     if (ELEVENLABS_ENDPOINTS[currentSpeaker]) {
       voice = ELEVENLABS_ENDPOINTS[currentSpeaker];
@@ -676,7 +688,7 @@ app.post("/ask/", apiLimiter, ensureAuthenticatedSession, async (req, res) => {
       if (proxyDataToUpdate && proxyDataToUpdate.id) {
         const proxyRef = db.collection("proxies").doc(proxyDataToUpdate.id);
         await proxyRef.update({
-          [siteId]: transcriptSummary, // e.g., 'meet': 'summary text'
+          [siteId]: transcriptSummary,
         });
         if (proxies[currentSpeaker.toLowerCase()])
           proxies[currentSpeaker.toLowerCase()][siteId] = transcriptSummary;
@@ -712,7 +724,22 @@ app.post("/ask/", apiLimiter, ensureAuthenticatedSession, async (req, res) => {
           proxy.toLowerCase() !== "interviewer"
       );
 
-      let systemMessage = `You are a screenwriter writing the next line of dialogue for ${currentSpeaker}: "${proxyPersonalProfile}". The overall context is: "${contextMessage}". Characters in the scene: ${charactersInScene.join(
+      // HAL: MODIFIED to inject persona summary
+      const proxyDataFromDb = await findProxyDataByName(currentSpeaker.toLowerCase());
+      const publicPersonaData = proxyDataFromDb?.publicPersonaData || [];
+      let personaSummaries = '';
+      if (publicPersonaData.length > 0) {
+          personaSummaries = 'The subject\'s public online persona is as follows: ';
+          publicPersonaData.forEach(p => {
+              if (p.confidence !== 'Low' && p.summary) {
+                  personaSummaries += `On ${p.platform}, their persona is: "${p.summary}". `;
+              }
+          });
+      }
+      
+      let systemMessage = `You are a screenwriter writing the next line of dialogue for ${currentSpeaker}: "${proxyPersonalProfile}". 
+      ${personaSummaries}
+      The overall context is: "${contextMessage}". Characters in the scene: ${charactersInScene.join(
         ", "
       )}. Their personalities are: ${Object.entries(proxies)
         .filter(([name]) => charactersInScene.includes(name))
@@ -1283,20 +1310,6 @@ function cleanDataForPublic(data) {
   return cleanedData;
 }
 
-function createPayload(systemMsg, userMsg) {
-  return {
-    model: gptModel,
-    messages: [
-      { role: "system", content: systemMsg },
-      { role: "user", content: userMsg },
-    ],
-    temperature: 1,
-    max_tokens: 500,
-    top_p: 1,
-    frequency_penalty: 0.5,
-    presence_penalty: 0,
-  };
-}
 
 async function getAssistantResponse(payload) {
   return await openai.chatCompletion(payload);
